@@ -1,19 +1,31 @@
-const express = require('express');
-const multer = require('multer');
-const fs = require('fs');
-const cors = require('cors');
+import express from "express";
+import cors from "cors";
+import Sentiment from "sentiment";
 
 const app = express();
-app.use(cors({ origin: '*' }));
+const port = process.env.PORT || 10000;
 
-const upload = multer({ dest: 'uploads/' });
+app.use(cors({ origin: "*" }));
+app.use(express.json());
 
-app.post('/count-rows', upload.single('file'), (req, res) => {
-  const content = fs.readFileSync(req.file.path, 'utf8');
-  const rowCount = content.split('\n').length;
-  fs.unlinkSync(req.file.path); // cleanup
-  res.json({ rows: rowCount });
+const sentiment = new Sentiment();
+
+// New endpoint: analyze text
+app.post("/sentiment", (req, res) => {
+  const { text } = req.body;
+  if (!text) {
+    return res.status(400).json({ error: "No text provided" });
+  }
+
+  const result = sentiment.analyze(text);
+  res.json({
+    text,
+    score: result.score, // > 0 positive, < 0 negative, 0 neutral
+    comparative: result.comparative,
+    words: result.words
+  });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
