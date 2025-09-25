@@ -3,16 +3,15 @@
 import express from "express";
 import cors from "cors";
 import Sentiment from "sentiment";
-
 import pkg from "pg";
 
 const { Pool } = pkg;
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL // safer way
+  connectionString: process.env.DATABASE_URL // use the environment variable for security
 });
 
-// quick test
+// Quick DB test
 (async () => {
   const client = await pool.connect();
   const res = await client.query("SELECT NOW()");
@@ -44,12 +43,6 @@ app.post("/sentiment", (req, res) => {
 });
 
 // ----- Poll Backend -----
-let votes = {
-  Design: 0,
-  Projects: 0,
-  Interactivity: 0,
-  Content: 0
-};
 
 // Ping route (useful for waking Render backend)
 app.get("/ping", (req, res) => {
@@ -73,9 +66,27 @@ app.post("/vote", async (req, res) => {
   }
 });
 
-// Get current results
-app.get("/results", (req, res) => {
-  res.json({ votes });
+// Get current results (aggregated)
+app.get("/results", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT option, COUNT(*) AS vote_count, ARRAY_AGG(feedback) AS feedbacks FROM votes GROUP BY option"
+    );
+
+    // Format for frontend
+    const votesData = {};
+    result.rows.forEach(row => {
+      votesData[row.option] = {
+        count: parseInt(row.vote_count),
+        feedbacks: row.feedbacks.filter(f => f !== null) // remove nulls
+      };
+    });
+
+    res.json(votesData);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
+  }
 });
 
 // ----- Start Server -----
