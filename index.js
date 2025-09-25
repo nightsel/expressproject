@@ -67,19 +67,16 @@ app.post("/vote", async (req, res) => {
 });
 
 // Get current results (aggregated)
+// Only return vote counts, no feedback
 app.get("/results", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT option, COUNT(*) AS vote_count, ARRAY_AGG(feedback) AS feedbacks FROM votes GROUP BY option"
+      "SELECT option, COUNT(*) AS vote_count FROM votes GROUP BY option"
     );
 
-    // Format for frontend
     const votesData = {};
     result.rows.forEach(row => {
-      votesData[row.option] = {
-        count: parseInt(row.vote_count),
-        feedbacks: row.feedbacks.filter(f => f !== null) // remove nulls
-      };
+      votesData[row.option] = parseInt(row.vote_count);
     });
 
     res.json(votesData);
