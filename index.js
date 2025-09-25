@@ -1,3 +1,5 @@
+// Full-stack project with persistent votes and user feedback stored in PostgreSQL, accessible via Express API.
+
 import express from "express";
 import cors from "cors";
 import Sentiment from "sentiment";
@@ -55,13 +57,20 @@ app.get("/ping", (req, res) => {
 });
 
 // Submit a vote
-app.post("/vote", (req, res) => {
-  const { option } = req.body;
-  if (!option || !votes.hasOwnProperty(option)) {
-    return res.status(400).json({ error: "Invalid vote option" });
+app.post("/vote", async (req, res) => {
+  const { option, feedback } = req.body;
+  if (!option) return res.status(400).json({ error: "No option provided" });
+
+  try {
+    await pool.query(
+      "INSERT INTO votes (option, feedback) VALUES ($1, $2)",
+      [option, feedback || null]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Database error" });
   }
-  votes[option]++;
-  res.json({ success: true, votes });
 });
 
 // Get current results
