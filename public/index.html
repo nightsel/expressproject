@@ -51,23 +51,29 @@ audio.volume = 0.5; // 50%
 
 
 async function analyzeAudio(audioBuffer) {
-  const channelData = [];
-  for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
-    channelData.push(audioBuffer.getChannelData(ch));
-  }
+  const numChannels = audioBuffer.numberOfChannels;
+  const step = 1024; // number of samples per frame
+  let globalMaxDB = -Infinity;
 
-  let globalPeak = 0;
+  for (let ch = 0; ch < numChannels; ch++) {
+    const data = audioBuffer.getChannelData(ch);
 
-  for (let ch = 0; ch < channelData.length; ch++) {
-    const data = channelData[ch];
-    for (let i = 0; i < data.length; i++) {
-      const absVal = Math.abs(data[i]);
-      if (absVal > globalPeak) globalPeak = absVal;
+    for (let i = 0; i < data.length; i += step) {
+      const slice = data.subarray(i, i + step);
+      let sumSquares = 0;
+      for (let j = 0; j < slice.length; j++) sumSquares += slice[j] ** 2;
+      const rms = Math.sqrt(sumSquares / slice.length);
+
+      // Convert linear RMS to dB
+      const db = 20 * Math.log10(rms + 1e-8); // small epsilon to avoid log(0)
+      if (db > globalMaxDB) globalMaxDB = db;
     }
   }
 
-  const maxDB = 20 * Math.log10(globalPeak + 1e-6);
-  return maxDB;
+  // Store globally for scaling in buckets
+  window.globalMaxDB = globalMaxDB;
+
+  return globalMaxDB;
 }
 
 
@@ -89,8 +95,12 @@ const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
 const numBuckets = 10;
 const displayedBuckets = Array(numBuckets).fill(0);
 
+let smoothedMinDB = -80; // start floor
+const minFollowSpeed = 0.7; // closer to 1 = slower to move
+
 function getFrequencyBucketsLogDB() {
-  analyser.getByteFrequencyData(dataArray);
+  const floatArray = new Float32Array(analyser.frequencyBinCount);
+  analyser.getFloatFrequencyData(floatArray); // dB values
 
   const numBuckets = 10;
   const buckets = [];
@@ -104,27 +114,27 @@ function getFrequencyBucketsLogDB() {
     const freqStart = minFreq * Math.pow(maxFreq / minFreq, i / numBuckets);
     const freqEnd = minFreq * Math.pow(maxFreq / minFreq, (i + 1) / numBuckets);
     const startBin = Math.floor(freqStart / binFreq);
-    const endBin = Math.min(Math.floor(freqEnd / binFreq), dataArray.length - 1);
+    const endBin = Math.min(Math.floor(freqEnd / binFreq), floatArray.length - 1);
 
-    let sumSquares = 0;
-    for (let j = startBin; j <= endBin; j++) {
-      const val = dataArray[j] / 255;
-
-      sumSquares += val * val;
-    }
-
-    const rms = Math.sqrt(sumSquares / (endBin - startBin + 1));
-    const db = 20 * Math.log10(rms + 1e-6);
-    buckets.push(db);
+    let sum = 0;
+    for (let j = startBin; j <= endBin; j++) sum += floatArray[j];
+    const avgDB = sum / (endBin - startBin + 1);
+    buckets.push(avgDB);
   }
-  const ceiling = 0.9; // 90% of canvas height
-  // Normalize dynamically (optional)
-  const minDB = Math.max(Math.min(...buckets), -80);
-  //const maxDB = Math.max(Math.max(...buckets)+0.1,-50);
-  const maxDB = window.globalMaxDB;
-  const normalized = buckets.map(db => (db - minDB) / (maxDB - minDB));
-  return normalized.map(val => val * ceiling);
+
+  // Absolute scaling in dB
+    const minDB = -80;      // quiet floor
+  const maxDB = window.globalMaxDB -18; //  lower peak by 18 decibel
+  const ceiling = 1;    // 90% of canvas height
+
+  return buckets.map(db => {
+    let val = (db - minDB) / (maxDB - minDB);
+    val = Math.max(0, Math.min(1, val));
+    return val * ceiling;
+  });
+
 }
+
 
 function drawFrequencies() {
   requestAnimationFrame(drawFrequencies);

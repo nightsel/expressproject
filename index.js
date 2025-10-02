@@ -11,7 +11,7 @@ import { v4 as uuidv4 } from "uuid";
 
 
 
-/*const { Pool } = pkg;
+const { Pool } = pkg;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL // use the environment variable for security
@@ -25,7 +25,7 @@ const TEXTALIVE_TOKEN = process.env.TEXTALIVE_TOKEN;
   const res = await client.query("SELECT NOW()");
   console.log("DB connected at:", res.rows[0].now);
   client.release();
-})();*/
+})();
 
 const app = express();
 const port = process.env.PORT || 10000;
@@ -183,7 +183,7 @@ app.get("/ping", (req, res) => {
 });
 
 // Submit a vote
-/*
+
 app.post("/vote", async (req, res) => {
   const { option, feedback } = req.body;
   if (!option) return res.status(400).json({ error: "No option provided" });
@@ -219,7 +219,7 @@ app.get("/results", async (req, res) => {
     res.status(500).json({ error: "Database error" });
   }
 });
-*/
+
 
 // ----- Start Server -----
 app.listen(port, () => {
