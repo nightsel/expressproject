@@ -16,6 +16,7 @@ import os from "os";
 
 import { spawn } from "child_process";
 import ytdlp from 'yt-dlp-exec';
+import { fileURLToPath } from "url";
 
 /*async function downloadYouTubeToBuffer(url) {
   return new Promise((resolve, reject) => {
@@ -192,35 +193,48 @@ app.get("/download-audio", async (req, res) => {
   if (!url) return res.status(400).json({ error: "Missing YouTube URL" });
 
   const id = uuidv4();
-  const filename = `temp_audio_${id}.mp3`;
+  const tempPath = path.join(os.tmpdir(), `temp_audio_${id}.mp3`);
   const bucketName = "audio";
 
   try {
-    // --- Download from YouTube using yt-dlp-exec ---
-    const buffer = await downloadYouTubeToBuffer(url);
+    // --- Download YouTube audio to temp file using yt-dlp-exec ---
+    await ytdlp(url, {
+      extractAudio: true,
+      audioFormat: "mp3",
+      output: tempPath,
+      quiet: true,
+      noWarnings: true,
+      preferFreeFormats: true,
+    });
 
+    // --- Read the temp file into a Buffer ---
+    const buffer = fs.readFileSync(tempPath);
 
-
-    // --- Upload to Supabase (same as before) ---
+    // --- Upload to Supabase ---
     const { error: uploadError } = await supabase
       .storage
       .from(bucketName)
-      .upload(filename, buffer, { cacheControl: "3600", upsert: true });
+      .upload(`temp_audio_${id}.mp3`, buffer, { cacheControl: "3600", upsert: true });
 
     if (uploadError) throw uploadError;
 
+    // --- Create a signed URL ---
     const { data: signedData, error: signedError } = await supabase
       .storage
       .from(bucketName)
-      .createSignedUrl(filename, 60 * 60);
+      .createSignedUrl(`temp_audio_${id}.mp3`, 60 * 60);
 
     if (signedError) throw signedError;
     if (!signedData || !signedData.signedUrl) throw new Error("Signed URL not returned");
 
     res.json({ url: signedData.signedUrl });
 
+    // --- Cleanup temp file ---
+    fs.unlinkSync(tempPath);
+
   } catch (err) {
     console.error("Download/upload error:", err);
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
     res.status(500).json({ error: "Failed to download/upload audio" });
   }
 });
