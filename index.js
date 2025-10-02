@@ -82,6 +82,7 @@ const TEXTALIVE_TOKEN = process.env.TEXTALIVE_TOKEN;
 const app = express();
 const port = process.env.PORT || 10000;
 
+
 async function downloadYouTubeToBuffer(url) {
   return new Promise((resolve, reject) => {
     const ytdlp = spawn("yt-dlp", ["-x", "--audio-format", "mp3", "-o", "-", url], {
@@ -192,35 +193,55 @@ app.get("/download-audio", async (req, res) => {
   if (!url) return res.status(400).json({ error: "Missing YouTube URL" });
 
   const id = uuidv4();
-  const filename = `temp_audio_${id}.mp3`;
+  const tempPath = path.join(os.tmpdir(), `temp_audio_${id}.mp3`);
   const bucketName = "audio";
 
   try {
-    // --- Download from YouTube using yt-dlp-exec ---
-    const buffer = await downloadYouTubeToBuffer(url);
+    // --- Download YouTube audio to temp file ---
+    await new Promise((resolve, reject) => {
+      const ytProcess = spawn("yt-dlp", [
+        "-x",
+        "--audio-format", "mp3",
+        "-o", tempPath,
+        url
+      ]);
 
+      let errData = "";
+      ytProcess.stderr.on("data", chunk => errData += chunk.toString());
+      ytProcess.on("error", reject);
+      ytProcess.on("close", code => {
+        if (code !== 0) return reject(new Error(`yt-dlp failed:\n${errData}`));
+        resolve();
+      });
+    });
 
+    // --- Read temp file ---
+    const buffer = fs.readFileSync(tempPath);
 
-    // --- Upload to Supabase (same as before) ---
+    // --- Upload to Supabase ---
     const { error: uploadError } = await supabase
       .storage
       .from(bucketName)
-      .upload(filename, buffer, { cacheControl: "3600", upsert: true });
+      .upload(`temp_audio_${id}.mp3`, buffer, { cacheControl: "3600", upsert: true });
 
     if (uploadError) throw uploadError;
 
     const { data: signedData, error: signedError } = await supabase
       .storage
       .from(bucketName)
-      .createSignedUrl(filename, 60 * 60);
+      .createSignedUrl(`temp_audio_${id}.mp3`, 60 * 60);
 
     if (signedError) throw signedError;
     if (!signedData || !signedData.signedUrl) throw new Error("Signed URL not returned");
 
     res.json({ url: signedData.signedUrl });
 
+    // --- Cleanup temp file ---
+    fs.unlinkSync(tempPath);
+
   } catch (err) {
     console.error("Download/upload error:", err);
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
     res.status(500).json({ error: "Failed to download/upload audio" });
   }
 });
