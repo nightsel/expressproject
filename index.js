@@ -81,6 +81,43 @@ const TEXTALIVE_TOKEN = process.env.TEXTALIVE_TOKEN;
 const app = express();
 const port = process.env.PORT || 10000;
 
+async function cleanSupabaseTemp() {
+  try {
+    const { data: files, error: listError } = await supabase
+      .storage
+      .from('audio')
+      .list();
+
+    if (listError) return console.error("Supabase list error:", listError);
+
+    const now = Date.now();
+    const expiryMs = 15 * 60 * 1000; // 15 minutes old
+
+    const filesToDelete = files
+      .filter(file => {
+        const created = new Date(file.created_at).getTime();
+        return now - created > expiryMs;
+      })
+      .map(file => file.name);
+
+    if (filesToDelete.length > 0) {
+      const { error: deleteError } = await supabase
+        .storage
+        .from('audio')
+        .remove(filesToDelete);
+
+      if (deleteError) console.error("Supabase delete error:", deleteError);
+      else console.log("Deleted Supabase temp files:", filesToDelete);
+    }
+  } catch (err) {
+    console.error("Supabase cleanup failed:", err);
+  }
+}
+
+// Run immediately and then periodically
+cleanSupabaseTemp();
+setInterval(cleanSupabaseTemp, 15 * 60 * 1000); // every 5 minutes
+/*
 function cleanOldFiles() {
   const tempFolder = path.join(process.cwd(), "temp_audio"); // <-- define tempFolder
   if (!fs.existsSync(tempFolder)) return; // no folder, nothing to clean
@@ -104,7 +141,7 @@ function cleanOldFiles() {
 
 // Run immediately and periodically
 cleanOldFiles();
-setInterval(cleanOldFiles, 5 * 60 * 1000);
+setInterval(cleanOldFiles, 5 * 60 * 1000);*/
 
 app.use(cors({ origin: "*" }));
 app.use(express.json());
@@ -126,120 +163,17 @@ app.post("/sentiment", (req, res) => {
   });
 });
 
-/*app.get("/download-audio", (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).json({ error: "Missing YouTube URL" });
-
-  const id = uuidv4();
-  const tempFolder = path.join(process.cwd(), "temp_audio");
-  if (!fs.existsSync(tempFolder)) fs.mkdirSync(tempFolder);
-
-  const outputFile = path.join(tempFolder, `temp_audio_${id}.mp3`);
-  const fileBuffer = fs.readFileSync(outputFile);
-  const { data, error } = await supabase
-    .storage
-    .from('audio')        // your bucket name
-    .upload(`temp_audio_${id}.mp3`, fileBuffer, { upsert: true });
-  if (error) throw error;
-  const publicUrl = supabase.storage.from('audio').getPublicUrl(`temp_audio_${id}.mp3`).data.publicUrl;
-  const waveformFile = path.join(tempFolder, `waveform_${id}.json`);
-
-  // yt-dlp command to download mp3
-  const cmd = `yt-dlp -x --audio-format mp3 -o "${outputFile}" ${url}`;
-  console.log("Running command:", cmd);
-
-  exec(cmd, (error, stdout, stderr) => {
-    if (error) {
-      console.error(error);
-      return res.status(500).json({ error: "Error downloading audio" });
-    }
-
-    console.log(stdout);
-
-    // Now generate waveform JSON using audiowaveform
-    const waveformCmd = `audiowaveform -i "${outputFile}" -o "${waveformFile}" -b 8`;
-    exec(waveformCmd, (waveErr, waveStdout, waveStderr) => {
-      if (waveErr) {
-        console.error(waveErr);
-        return res.status(500).json({ error: "Error generating waveform" });
-      }
-
-      console.log("Waveform generated:", waveformFile);
-      //  return UUID so frontend can access both audio + waveform
-      res.json({ message: "Audio + waveform ready!", id });
-    });
-  });
-});
-
+// download and save to Supabase
 app.get("/download-audio", async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: "Missing YouTube URL" });
 
   const id = uuidv4();
   const filename = `temp_audio_${id}.mp3`;
-  const bucketName = "audio"; // your Supabase bucket
+  const bucketName = "audio";
 
   try {
-    // 1 Download audio to memory using yt-dlp
-    const { stdout, stderr } = await new Promise((resolve, reject) => {
-      const cmd = `yt-dlp -x --audio-format mp3 -o - ${url}`; // -o - streams to stdout
-      exec(cmd, { encoding: "buffer", maxBuffer: 1024 * 1024 * 1024 }, (err, stdout, stderr) => {
-        if (err) return reject(err);
-        resolve({ stdout, stderr });
-      });
-    });
-
-    // stdout contains the MP3 buffer
-    const buffer = stdout;
-
-    // 2 Upload to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase
-      .storage
-      .from(bucketName)
-      .upload(filename, buffer, { cacheControl: "3600", upsert: true });
-
-    if (uploadError) throw uploadError;
-
-    // 3 Generate public URL
-    const { data: urlData } = supabase.storage.from(bucketName).getPublicUrl(filename);
-    const publicUrl = urlData.publicUrl;
-
-    // 4 Generate waveform JSON in memory using audiowaveform CLI
-    const waveformBuffer = await new Promise((resolve, reject) => {
-      const cmd = `audiowaveform -i - -o - -b 8`; // input/output via stdin/stdout
-      const proc = exec(cmd, { encoding: "buffer", maxBuffer: 1024 * 1024 * 1024 }, (err, stdout, stderr) => {
-        if (err) return reject(err);
-        resolve(stdout);
-      });
-      proc.stdin.write(buffer);
-      proc.stdin.end();
-    });
-
-    const waveformJson = JSON.parse(waveformBuffer.toString("utf8"));
-
-    //  Return public URL + waveform
-    res.json({
-      id,
-      url: publicUrl,
-      waveform: waveformJson.data
-    });
-
-  } catch (err) {
-    console.error("Download/upload error:", err);
-    res.status(500).json({ error: "Failed to download/upload audio" });
-  }
-});
-
-app.get("/download-audio", async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).json({ error: "Missing YouTube URL" });
-
-  const id = uuidv4();
-  const filename = `temp_audio_${id}.mp3`;
-  const bucketName = "audio"; // your private bucket
-
-  try {
-    // 1️⃣ Download audio to memory using yt-dlp
+    // --- Download from YouTube ---
     const buffer = await new Promise((resolve, reject) => {
       const ytdlp = spawn("yt-dlp", ["-x", "--audio-format", "mp3", "-o", "-", url], {
         stdio: ["ignore", "pipe", "pipe"]
@@ -257,340 +191,64 @@ app.get("/download-audio", async (req, res) => {
       });
     });
 
-    // 2️⃣ Upload MP3 buffer to Supabase Storage (private bucket)
+    // --- Upload to Supabase ---
     const { error: uploadError } = await supabase
       .storage
       .from(bucketName)
       .upload(filename, buffer, { cacheControl: "3600", upsert: true });
+
     if (uploadError) throw uploadError;
 
-    // 3️⃣ Generate a signed URL (valid 1 hour)
+    // --- Create signed URL ---
     const { data: signedData, error: signedError } = await supabase
       .storage
       .from(bucketName)
-      .createSignedUrl(filename, 60 * 60); // 1 hour
+      .createSignedUrl(filename, 60 * 60); // 1 hour validity
+
     if (signedError) throw signedError;
+    if (!signedData || !signedData.signedUrl) throw new Error("Signed URL not returned");
 
-    const publicUrl = signedData.signedUrl;
-
-    // 4️⃣ Generate waveform JSON in memory using audiowaveform
-    const waveformBuffer = await new Promise((resolve, reject) => {
-      const proc = spawn("audiowaveform", ["-i", "-", "-o", "-", "-b", "8"], {
-        stdio: ["pipe", "pipe", "pipe"]
-      });
-
-      const chunks = [];
-      let errorData = "";
-
-      proc.stdout.on("data", chunk => chunks.push(chunk));
-      proc.stderr.on("data", chunk => errorData += chunk.toString());
-
-      proc.on("error", err => reject(err));
-      proc.on("close", code => {
-        if (code !== 0) return reject(new Error(`audiowaveform failed:\n${errorData}`));
-        resolve(Buffer.concat(chunks));
-      });
-
-      proc.stdin.write(buffer);
-      proc.stdin.end();
-    });
-
-    const waveformJson = JSON.parse(waveformBuffer.toString("utf8"));
-
-    // 5️⃣ Return signed URL + waveform
-    res.json({
-      id,
-      url: publicUrl,
-      waveform: waveformJson.data
-    });
-
-  } catch (err) {
-    console.error("Download/upload error:", err);
-    res.status(500).json({ error: "Failed to download/upload audio" });
-  }
-});
-
-
-// --- Download YouTube, upload to Supabase, generate waveform ---
-app.get("/download-audio", async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).json({ error: "Missing YouTube URL" });
-
-  const id = uuidv4();
-  const filename = `temp_audio_${id}.mp3`;
-  const bucketName = "audio"; // your private bucket
-  const tempFile = path.join(os.tmpdir(), `audio_${id}.mp3`);
-
-  try {
-    // 1 Download audio to temp file
-    await new Promise((resolve, reject) => {
-      const ytdlp = spawn("yt-dlp", ["-x", "--audio-format", "mp3", "-o", tempFile, url]);
-      let errorData = "";
-
-      ytdlp.stderr.on("data", chunk => errorData += chunk.toString());
-      ytdlp.on("error", err => reject(err));
-      ytdlp.on("close", code => {
-        if (code !== 0) return reject(new Error(`yt-dlp failed:\n${errorData}`));
-        resolve();
-      });
-    });
-
-    // 2 Read file and upload to Supabase
-    const buffer = fs.readFileSync(tempFile);
-    const { error: uploadError } = await supabase
-      .storage
-      .from(bucketName)
-      .upload(filename, buffer, { cacheControl: "3600", upsert: true });
-    if (uploadError) throw uploadError;
-
-    //  Generate signed URL (valid 1 hour)
-    const { data: signedData, error: signedError } = await supabase
-      .storage
-      .from(bucketName)
-      .createSignedUrl(filename, 60 * 60); // 1 hour
-    if (signedError) throw signedError;
-    const signedUrl = signedData.signedUrl;
-
-    // 4 Generate waveform JSON from temp file
-    const waveformBuffer = await new Promise((resolve, reject) => {
-      const proc = spawn("audiowaveform", ["-i", tempFile, "-o", "-", "-b", "8"]);
-      const chunks = [];
-      let errorData = "";
-
-      proc.stdout.on("data", c => chunks.push(c));
-      proc.stderr.on("data", c => errorData += c.toString());
-
-      proc.on("error", err => reject(err));
-      proc.on("close", code => {
-        if (code !== 0) return reject(new Error(`audiowaveform failed:\n${errorData}`));
-        resolve(Buffer.concat(chunks));
-      });
-    });
-
-    const waveformJson = JSON.parse(waveformBuffer.toString("utf8"));
-
-    // 5 Cleanup temp file
-    fs.unlinkSync(tempFile);
-
-    // 6 Return signed URL + waveform
-    res.json({
-      id,
-      url: signedUrl,
-      waveform: waveformJson.data
-    });
-
-  } catch (err) {
-    console.error("Download/upload error:", err);
-    if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
-    res.status(500).json({ error: "Failed to download/upload audio" });
-  }
-});
-
-app.get("/download-audio", async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).json({ error: "Missing YouTube URL" });
-
-  const id = uuidv4();
-  const tempFolder = path.join(process.cwd(), "temp_audio");
-  if (!fs.existsSync(tempFolder)) fs.mkdirSync(tempFolder);
-
-  const tempMp3 = path.join(tempFolder, `temp_audio_${id}.mp3`);
-  const tempWav = path.join(tempFolder, `temp_audio_${id}.wav`);
-  const bucketName = "audio";
-
-  try {
-    // 1️⃣ Download MP3 with yt-dlp
-    await new Promise((resolve, reject) => {
-      const ytdlp = spawn("yt-dlp", [
-        "-x",
-        "--audio-format", "mp3",
-        "--audio-quality", "0",
-        "-o", tempMp3,
-        url
-      ]);
-
-      let stderr = "";
-      ytdlp.stderr.on("data", chunk => stderr += chunk.toString());
-      ytdlp.on("error", err => reject(err));
-      ytdlp.on("close", code => code === 0 ? resolve() : reject(new Error(stderr)));
-    });
-
-    // 2️⃣ Convert MP3 → WAV for audiowaveform
-    await new Promise((resolve, reject) => {
-      const ffmpeg = spawn("ffmpeg", ["-y", "-i", tempMp3, tempWav]);
-      let stderr = "";
-      ffmpeg.stderr.on("data", chunk => stderr += chunk.toString());
-      ffmpeg.on("error", err => reject(err));
-      ffmpeg.on("close", code => code === 0 ? resolve() : reject(new Error(stderr)));
-    });
-
-    // 3️⃣ Generate waveform JSON
-    const waveformBuffer = await new Promise((resolve, reject) => {
-      const proc = spawn("audiowaveform", ["-i", tempWav, "-o", "-", "-b", "8"]);
-
-      const chunks = [];
-      let stderr = "";
-      proc.stdout.on("data", c => chunks.push(c));
-      proc.stderr.on("data", c => stderr += c);
-      proc.on("error", err => reject(err));
-      proc.on("close", code => code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(stderr)));
-    });
-
-    const waveformJson = JSON.parse(waveformBuffer.toString("utf8"));
-
-    // 4️⃣ Upload MP3 to Supabase (private bucket)
-    const mp3Buffer = fs.readFileSync(tempMp3);
-    const { error: uploadError } = await supabase
-      .storage
-      .from(bucketName)
-      .upload(`temp_audio_${id}.mp3`, mp3Buffer, { cacheControl: "3600", upsert: true });
-    if (uploadError) throw uploadError;
-
-    // 5️⃣ Generate signed URL
-    const { data: signedData, error: signedError } = await supabase
-      .storage
-      .from(bucketName)
-      .createSignedUrl(`temp_audio_${id}.mp3`, 60 * 60);
-    if (signedError) throw signedError;
-
-    // 6️⃣ Cleanup temp files
-    fs.unlinkSync(tempMp3);
-    fs.unlinkSync(tempWav);
-
-    res.json({
-      id,
-      url: signedData.signedUrl,
-      waveform: waveformJson.data
-    });
-
-  } catch (err) {
-    console.error("Download/upload error:", err);
-    res.status(500).json({ error: "Failed to download/upload audio" });
-  }
-});
-
-app.get("/download-audio", async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).json({ error: "Missing YouTube URL" });
-
-  const id = uuidv4();
-  const tempFolder = path.join(process.cwd(), "temp_audio");
-  if (!fs.existsSync(tempFolder)) fs.mkdirSync(tempFolder);
-
-  const tempMp3 = path.join(tempFolder, `temp_audio_${id}.mp3`);
-  const tempWav = path.join(tempFolder, `temp_audio_${id}.wav`);
-
-  try {
-    // 1️⃣ Download MP3 using yt-dlp
-    await new Promise((resolve, reject) => {
-      const ytdlp = spawn("yt-dlp", ["-x", "--audio-format", "mp3", "-o", tempMp3, url]);
-      let stderr = "";
-      ytdlp.stderr.on("data", chunk => stderr += chunk.toString());
-      ytdlp.on("error", err => reject(err));
-      ytdlp.on("close", code => code === 0 ? resolve() : reject(new Error(stderr)));
-    });
-
-    // 2️⃣ Convert MP3 → WAV (16-bit PCM mono) via ffmpeg
-    await new Promise((resolve, reject) => {
-      const ffmpeg = spawn("ffmpeg", ["-y", "-i", tempMp3, "-ac", "1", "-ar", "44100", "-sample_fmt", "s16", tempWav]);
-      let stderr = "";
-      ffmpeg.stderr.on("data", chunk => stderr += chunk.toString());
-      ffmpeg.on("error", err => reject(err));
-      ffmpeg.on("close", code => code === 0 ? resolve() : reject(new Error(stderr)));
-    });
-
-    // 3️⃣ Generate waveform JSON
-    const waveformBuffer = await new Promise((resolve, reject) => {
-      const proc = spawn("audiowaveform", ["-i", tempWav, "-o", "-", "-b", "8"]);
-      let chunks = [];
-      let stderr = "";
-
-      proc.stdout.on("data", chunk => chunks.push(chunk));
-      proc.stderr.on("data", chunk => stderr += chunk.toString());
-
-      proc.on("error", err => reject(err));
-      proc.on("close", code => code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(stderr)));
-    });
-
-    const waveformJson = JSON.parse(waveformBuffer.toString("utf8"));
-
-    // 4️⃣ Upload MP3 to Supabase Storage
-    const filename = `temp_audio_${id}.mp3`;
-    const { error: uploadError } = await supabase
-      .storage
-      .from("audio")
-      .upload(filename, fs.readFileSync(tempMp3), { cacheControl: "3600", upsert: true });
-    if (uploadError) throw uploadError;
-
-    // 5️⃣ Generate signed URL
-    const { data: signedData, error: signedError } = await supabase
-      .storage
-      .from("audio")
-      .createSignedUrl(filename, 60 * 60); // 1 hour
-    if (signedError) throw signedError;
-
-    // ✅ Return URL + waveform
-    res.json({
-      id,
-      url: signedData.signedUrl,
-      waveform: waveformJson.data
-    });
-
-    // Optional cleanup
-    fs.unlinkSync(tempMp3);
-    fs.unlinkSync(tempWav);
-
-  } catch (err) {
-    console.error("Download/upload error:", err);
-    res.status(500).json({ error: "Failed to download/upload audio" });
-  }
-});*/
-
-app.get("/download-audio", async (req, res) => {
-  const { url } = req.query;
-  if (!url) return res.status(400).json({ error: "Missing YouTube URL" });
-
-  const id = uuidv4();
-  const filename = `temp_audio_${id}.mp3`;
-  const bucketName = "audio";
-
-  try {
-    // Download MP3 into memory
-    const buffer = await new Promise((resolve, reject) => {
-      const ytdlp = spawn("yt-dlp", ["-x", "--audio-format", "mp3", "-o", "-", url], {
-        stdio: ["ignore", "pipe", "pipe"]
-      });
-
-      const chunks = [];
-      let errorData = "";
-
-      ytdlp.stdout.on("data", chunk => chunks.push(chunk));
-      ytdlp.stderr.on("data", chunk => errorData += chunk.toString());
-      ytdlp.on("error", err => reject(err));
-      ytdlp.on("close", code => {
-        if (code !== 0) return reject(new Error(`yt-dlp failed:\n${errorData}`));
-        resolve(Buffer.concat(chunks));
-      });
-    });
-
-    // Upload to Supabase
-    const { error: uploadError } = await supabase
-      .storage
-      .from(bucketName)
-      .upload(filename, buffer, { cacheControl: "3600", upsert: true });
-    if (uploadError) throw uploadError;
-
-    // Generate a signed URL (1 hour)
-    const { data: signedData, error: signedError } = await supabase
-      .storage
-      .from(bucketName)
-      .createSignedUrl(filename, 60 * 60);
-    if (signedError) throw signedError;
-
+    // Return the signed URL to frontend
     res.json({ url: signedData.signedUrl });
   } catch (err) {
     console.error("Download/upload error:", err);
     res.status(500).json({ error: "Failed to download/upload audio" });
+  }
+});
+
+
+app.get("/proxy-audio", async (req, res) => {
+  try {
+    const fileUrl = req.query.url;
+    if (!fileUrl) {
+      return res.status(400).json({ error: "Missing ?url parameter" });
+    }
+
+    // Fetch the file from Supabase (or any upstream URL)
+    const upstream = await fetch(fileUrl);
+    if (!upstream.ok) {
+      return res.status(500).json({ error: "Failed to fetch audio" });
+    }
+
+    // Set correct Content-Type for audio
+    res.setHeader("Content-Type", "audio/mpeg");
+
+    // Convert Web ReadableStream → Node.js stream and pipe to response
+    const nodeStream = Readable.from(upstream.body);
+    nodeStream.pipe(res);
+
+    nodeStream.on("end", () => {
+      console.log("Audio streamed successfully");
+    });
+
+    nodeStream.on("error", (err) => {
+      console.error("Stream error:", err);
+      res.end();
+    });
+
+  } catch (err) {
+    console.error("Proxy error:", err);
+    res.status(500).json({ error: "Proxy failed" });
   }
 });
 

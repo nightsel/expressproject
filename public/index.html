@@ -9,184 +9,156 @@
     textarea { height: 100px; margin-bottom: 10px; }
     button { margin-top: 10px; padding: 5px 10px; }
     .result { margin-top: 20px; font-weight: bold; }
+    canvas { display: block; margin-top: 20px; border: 1px solid #ccc; }
   </style>
 </head>
 <body>
 
-  <h2>Download YouTube Audio</h2>
-  <input type="text" id="ytUrl" placeholder="Enter YouTube URL">
-  <button onclick="downloadAudio()">Download Audio</button>
+<h2>Download YouTube Audio</h2>
+<input type="text" id="ytUrl" placeholder="Enter YouTube URL">
+<button id="downloadBtn" onclick="downloadAudio()">Download Audio</button>
 
-  <audio id="audioPlayer" controls>
-    <source id="audioSource" type="audio/mpeg">
-    Your browser does not support the audio element.
-  </audio>
 
-  <h2>Waveform</h2>
-  <canvas id="waveformCanvas" width="1000" height="200" style="border:1px solid #ccc;"></canvas>
+<audio id="audioPlayer" controls disabled></audio>
 
-  <h2>Frequency Spectrum</h2>
-  <canvas id="canvas2" width="1000" height="200" style="border:1px solid #ccc;"></canvas>
+<h2>Waveform</h2>
+<canvas id="waveformCanvas" width="1000" height="200"></canvas>
+
+<h2>Frequency Spectrum</h2>
+<canvas id="canvas2" width="1000" height="200"></canvas>
 
 <script>
 const audio = document.getElementById("audioPlayer");
-const audioSource = document.getElementById("audioSource");
+
+const waveformCanvas = document.getElementById("waveformCanvas");
+const waveformCtx = waveformCanvas.getContext("2d");
+const freqCanvas = document.getElementById("canvas2");
+const freqCtx = freqCanvas.getContext("2d");
+
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-const source = audioCtx.createMediaElementSource(audio);
 const analyser = audioCtx.createAnalyser();
-source.connect(analyser);
-analyser.connect(audioCtx.destination);
-
 analyser.fftSize = 2048;
-const canvas2 = document.getElementById("canvas2");
-const ctx2 = canvas2.getContext("2d");
-let freqAnimationRunning = false;
-audio.volume = 0.5;
-
+let source = null;
+let waveformData = null;
 const numBuckets = 10;
-let globalMaxDB = -80;
 
-// --- Frequency spectrum ---
-function getFrequencyBucketsLogDB() {
-  const floatArray = new Float32Array(analyser.frequencyBinCount);
-  analyser.getFloatFrequencyData(floatArray);
-
-  const buckets = [];
-  const sampleRate = audioCtx.sampleRate;
-  const fftSize = analyser.fftSize;
-  const binFreq = sampleRate / fftSize;
-  const minFreq = 20;
-  const maxFreq = 20000;
-
-  for (let i = 0; i < numBuckets; i++) {
-    const freqStart = minFreq * Math.pow(maxFreq / minFreq, i / numBuckets);
-    const freqEnd = minFreq * Math.pow(maxFreq / minFreq, (i + 1) / numBuckets);
-    const startBin = Math.floor(freqStart / binFreq);
-    const endBin = Math.min(Math.floor(freqEnd / binFreq), floatArray.length - 1);
-
-    let sum = 0;
-    for (let j = startBin; j <= endBin; j++) sum += floatArray[j];
-    const avgDB = sum / (endBin - startBin + 1);
-    buckets.push(avgDB);
-  }
-
-  const minDB = -80;
-  const ceiling = 1;
-  return buckets.map(db => {
-    let val = (db - minDB) / (globalMaxDB - minDB);
-    val = Math.max(0, Math.min(1, val));
-    return val * ceiling;
-  });
+// Only create the MediaElementSource once
+if (!source) {
+    source = audioCtx.createMediaElementSource(audio);
+    source.connect(analyser);
+    analyser.connect(audioCtx.destination);
 }
 
-function drawFrequencies() {
-  requestAnimationFrame(drawFrequencies);
-  const buckets = getFrequencyBucketsLogDB();
-  ctx2.clearRect(0, 0, canvas2.width, canvas2.height);
-  const barWidth = canvas2.width / buckets.length;
-
-  buckets.forEach((val, i) => {
-    const barHeight = val * canvas2.height;
-    ctx2.fillStyle = "#4caf50";
-    ctx2.fillRect(i * barWidth, canvas2.height - barHeight, barWidth - 2, barHeight);
-  });
-}
-
-// --- Waveform helper ---
+// --- Downsample waveform helper ---
 function downsampleWaveform(data, width) {
-  const downsampled = [];
-  const factor = Math.floor(data.length / width);
+    const factor = Math.floor(data.length / width);
+    const downsampled = [];
 
-  for (let i = 0; i < width; i++) {
-    const slice = data.slice(i * factor, (i + 1) * factor);
-    if (slice.length === 0) {
-      downsampled.push({ min: 0, max: 0 });
-      continue;
+    for (let i = 0; i < width; i++) {
+        const slice = data.slice(i * factor, (i + 1) * factor);
+        let sumSquares = slice.reduce((sum, v) => sum + v*v, 0);
+        const rms = Math.sqrt(sumSquares / slice.length);
+        downsampled.push({ min: -rms, max: rms });
     }
-    let sumSquares = 0;
-    slice.forEach(v => sumSquares += v * v);
-    const rms = Math.sqrt(sumSquares / slice.length);
-    downsampled.push({ min: -rms, max: rms });
-  }
-  return downsampled;
+
+    const maxVal = Math.max(...downsampled.map(d => d.max));
+    const minVal = Math.min(...downsampled.map(d => d.min));
+
+    return downsampled.map(({min, max}) => ({
+        min: (min - minVal) / (maxVal - minVal) * 2 - 1,
+        max: (max - minVal) / (maxVal - minVal) * 2 - 1
+    }));
 }
 
-function animateWaveform(data, audio) {
-  const canvas = document.getElementById("waveformCanvas");
-  const ctx = canvas.getContext("2d");
-  const middleY = canvas.height / 2;
-  const amplitude = middleY;
-  const waveform = downsampleWaveform(data, canvas.width);
+// --- Animate waveform ---
+function animateWaveform() {
+    if (!waveformData || !audio.duration) return requestAnimationFrame(animateWaveform);
 
-  function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const progress = audio.currentTime / audio.duration;
-    const progressX = Math.floor(progress * canvas.width);
+    waveformCtx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
+    const middleY = waveformCanvas.height / 2;
+    const amplitude = middleY;
+    const progressX = Math.floor(audio.currentTime / audio.duration * waveformCanvas.width);
 
-    for (let x = 0; x < waveform.length; x++) {
-      const { min, max } = waveform[x];
-      const y1 = middleY - max * amplitude;
-      const y2 = middleY - min * amplitude;
-      ctx.fillStyle = x < progressX ? "#4caf50" : "#ccc";
-      ctx.fillRect(x, Math.min(y1, y2), 1, Math.abs(y2 - y1));
+    for (let x = 0; x < waveformData.length; x++) {
+        const { min, max } = waveformData[x];
+        const y1 = middleY - max * amplitude;
+        const y2 = middleY - min * amplitude;
+        waveformCtx.fillStyle = x < progressX ? "#4caf50" : "#ccc";
+        waveformCtx.fillRect(x, Math.min(y1, y2), 1, Math.abs(y2 - y1));
     }
-    requestAnimationFrame(draw);
-  }
-  draw();
+
+    requestAnimationFrame(animateWaveform);
 }
 
-// --- Download + display audio ---
-/*
+// --- Draw frequency spectrum ---
+function drawFrequencies() {
+    const floatArray = new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(floatArray); // dB values
+
+    freqCtx.clearRect(0, 0, freqCanvas.width, freqCanvas.height);
+    const barWidth = freqCanvas.width / numBuckets;
+
+    const sampleRate = audioCtx.sampleRate;
+    const fftSize = analyser.fftSize;
+    const binFreq = sampleRate / fftSize;
+    const minFreq = 20;
+    const maxFreq = 20000;
+
+    for (let i = 0; i < numBuckets; i++) {
+        const freqStart = minFreq * Math.pow(maxFreq / minFreq, i / numBuckets);
+        const freqEnd   = minFreq * Math.pow(maxFreq / minFreq, (i + 1) / numBuckets);
+        const startBin = Math.floor(freqStart / binFreq);
+        const endBin = Math.min(Math.floor(freqEnd / binFreq), floatArray.length - 1);
+
+        let sumDB = 0;
+        for (let j = startBin; j <= endBin; j++) sumDB += floatArray[j];
+        const avgDB = sumDB / (endBin - startBin + 1);
+
+        const minDB = -80;
+        const maxDB = 0;
+        let val = (avgDB - minDB) / (maxDB - minDB);
+        val = Math.max(0, Math.min(1, val));
+
+        const barHeight = val * freqCanvas.height;
+        freqCtx.fillStyle = "#4caf50";
+        freqCtx.fillRect(i * barWidth, freqCanvas.height - barHeight, barWidth - 2, barHeight);
+    }
+
+    requestAnimationFrame(drawFrequencies);
+}
+
+// --- Download audio ---
 async function downloadAudio() {
-  const ytUrl = document.getElementById("ytUrl").value;
-  if (!ytUrl) return alert("Please enter a YouTube URL");
 
-  const res = await fetch(`/download-audio?url=${encodeURIComponent(ytUrl)}`);
-  const data = await res.json();
-  if (data.error) return alert("Error: " + data.error);
+    const ytUrl = document.getElementById("ytUrl").value.trim();
+    if (!ytUrl) return alert("Please enter a YouTube URL");
 
-  audioSource.src = data.url;
-  audioPlayer.load();
+    const res = await fetch(`/download-audio?url=${encodeURIComponent(ytUrl)}`);
+    const data = await res.json();
+    if (data.error) return alert("Error: " + data.error);
 
-  const waveformData = data.waveform;
-  const maxVal = Math.max(...waveformData);
-  const minVal = Math.min(...waveformData);
-  const normalizedWaveform = maxVal === minVal
-    ? waveformData.map(_ => 0)
-    : waveformData.map(v => 2 * (v - minVal) / (maxVal - minVal) - 1);
+    const audioUrl = `/proxy-audio?url=${encodeURIComponent(data.url)}`;
 
-  audioPlayer.onloadedmetadata = () => {
-    animateWaveform(normalizedWaveform, audioPlayer);
-    if (!freqAnimationRunning) {
-      freqAnimationRunning = true;
-      drawFrequencies();
-    }
-  };
+    // Decode waveform before assigning src
+    const arrayBuffer = await (await fetch(audioUrl)).arrayBuffer();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+    waveformData = downsampleWaveform(audioBuffer.getChannelData(0), waveformCanvas.width);
 
-  // Decode audio in AudioContext for globalMaxDB
-  const arrayBuffer = await (await fetch(data.url)).arrayBuffer();
-  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-  const channelData = audioBuffer.getChannelData(0);
-  globalMaxDB = 20 * Math.log10(Math.max(...channelData.map(v => Math.abs(v))) + 1e-8);
-}*/
+    // Assign src only after decoding
+    audio.src = audioUrl;
+    // prevent users from pressing play button too fast
+    audio.onloadedmetadata = () => {
+     audio.removeAttribute('disabled'); // now user can play
+ };
+    audio.load();
 
-async function downloadAudio() {
-  const ytUrl = document.getElementById("ytUrl").value;
-  if (!ytUrl) return alert("Please enter a YouTube URL");
-
-  const res = await fetch(`/download-audio?url=${encodeURIComponent(ytUrl)}`);
-  const data = await res.json();
-  if (data.error) return alert("Error: " + data.error);
-
-  const audio = document.getElementById("audioPlayer");
-  const audioSource = document.getElementById("audioSource");
-  audioSource.src = data.url;
-  audio.load();
-  audio.play();
 }
 
+// --- Play audio safely ---
 audio.addEventListener("play", async () => {
-  if (audioCtx.state === "suspended") await audioCtx.resume();
+    if (audioCtx.state === "suspended") await audioCtx.resume();
+    animateWaveform();
+    drawFrequencies();
 });
 </script>
 
@@ -214,5 +186,6 @@ async function checkSentiment() {
      Words: ${data.words.join(", ")}`;
 }
 </script>
+
 </body>
 </html>
