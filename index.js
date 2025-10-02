@@ -15,6 +15,7 @@ import { execFile } from 'child_process';
 import os from "os";
 
 import { spawn } from "child_process";
+import ytdlp from 'yt-dlp-exec';
 
 /*async function downloadYouTubeToBuffer(url) {
   return new Promise((resolve, reject) => {
@@ -80,6 +81,28 @@ const TEXTALIVE_TOKEN = process.env.TEXTALIVE_TOKEN;
 
 const app = express();
 const port = process.env.PORT || 10000;
+
+async function downloadYouTubeToBuffer(url) {
+  return new Promise((resolve, reject) => {
+    const ytdlp = spawn("yt-dlp", ["-x", "--audio-format", "mp3", "-o", "-", url], {
+  stdio: ["ignore", "pipe", "pipe"]
+});
+
+    const chunks = [];
+    let errorData = "";
+
+    ytdlp.stdout.on("data", chunk => chunks.push(chunk));
+    ytdlp.stderr.on("data", chunk => errorData += chunk.toString());
+
+    ytdlp.on("error", err => reject(err));
+    ytdlp.on("close", code => {
+      if (code !== 0) return reject(new Error(`yt-dlp failed:\n${errorData}`));
+      resolve(Buffer.concat(chunks)); // THIS is a real Buffer
+    });
+
+  //  ytdlp.stdin.end(); // close stdin
+  });
+}
 
 async function cleanSupabaseTemp() {
   try {
@@ -173,25 +196,12 @@ app.get("/download-audio", async (req, res) => {
   const bucketName = "audio";
 
   try {
-    // --- Download from YouTube ---
-    const buffer = await new Promise((resolve, reject) => {
-      const ytdlp = spawn("yt-dlp", ["-x", "--audio-format", "mp3", "-o", "-", url], {
-        stdio: ["ignore", "pipe", "pipe"]
-      });
+    // --- Download from YouTube using yt-dlp-exec ---
+    const buffer = await downloadYouTubeToBuffer(url);
 
-      const chunks = [];
-      let errorData = "";
 
-      ytdlp.stdout.on("data", chunk => chunks.push(chunk));
-      ytdlp.stderr.on("data", chunk => errorData += chunk.toString());
-      ytdlp.on("error", err => reject(err));
-      ytdlp.on("close", code => {
-        if (code !== 0) return reject(new Error(`yt-dlp failed:\n${errorData}`));
-        resolve(Buffer.concat(chunks));
-      });
-    });
 
-    // --- Upload to Supabase ---
+    // --- Upload to Supabase (same as before) ---
     const { error: uploadError } = await supabase
       .storage
       .from(bucketName)
@@ -199,17 +209,16 @@ app.get("/download-audio", async (req, res) => {
 
     if (uploadError) throw uploadError;
 
-    // --- Create signed URL ---
     const { data: signedData, error: signedError } = await supabase
       .storage
       .from(bucketName)
-      .createSignedUrl(filename, 60 * 60); // 1 hour validity
+      .createSignedUrl(filename, 60 * 60);
 
     if (signedError) throw signedError;
     if (!signedData || !signedData.signedUrl) throw new Error("Signed URL not returned");
 
-    // Return the signed URL to frontend
     res.json({ url: signedData.signedUrl });
+
   } catch (err) {
     console.error("Download/upload error:", err);
     res.status(500).json({ error: "Failed to download/upload audio" });
