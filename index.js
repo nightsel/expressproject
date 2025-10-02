@@ -198,12 +198,11 @@ app.get("/download-audio", async (req, res) => {
   const bucketName = "audio";
 
   try {
-    // --- Download YouTube audio to temp file ---
-
 
     // --- Download YouTube audio to temp file using yt-dlp-exec ---
     await ytdlp(url, {
       extractAudio: true,
+      audioFormat: "mp3",
       output: tempPath,
       quiet: true,
       noWarnings: true,
