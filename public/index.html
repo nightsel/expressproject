@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Sentiment Checker</title>
+  <title>YouTube Audio + Waveform</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 50px; }
-    textarea { width: 100%; height: 100px; }
+    textarea, input { width: 100%; }
+    textarea { height: 100px; margin-bottom: 10px; }
     button { margin-top: 10px; padding: 5px 10px; }
     .result { margin-top: 20px; font-weight: bold; }
   </style>
@@ -13,7 +14,6 @@
 <body>
 
   <h2>Download YouTube Audio</h2>
-
   <input type="text" id="ytUrl" placeholder="Enter YouTube URL">
   <button onclick="downloadAudio()">Download Audio</button>
 
@@ -22,87 +22,35 @@
     Your browser does not support the audio element.
   </audio>
 
-
   <h2>Waveform</h2>
   <canvas id="waveformCanvas" width="1000" height="200" style="border:1px solid #ccc;"></canvas>
 
   <h2>Frequency Spectrum</h2>
-<canvas id="canvas2" width="1000" height="200" style="border:1px solid #ccc;"></canvas>
+  <canvas id="canvas2" width="1000" height="200" style="border:1px solid #ccc;"></canvas>
 
-
-  <script>
-  const audio = document.getElementById("audioPlayer");
+<script>
+const audio = document.getElementById("audioPlayer");
+const audioSource = document.getElementById("audioSource");
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 const source = audioCtx.createMediaElementSource(audio);
-
 const analyser = audioCtx.createAnalyser();
 source.connect(analyser);
 analyser.connect(audioCtx.destination);
 
-analyser.fftSize = 2048; // higher = more detail
-const bufferLength = analyser.frequencyBinCount; // fftSize / 2
-const dataArray = new Uint8Array(bufferLength); // stores frequency amplitudes
+analyser.fftSize = 2048;
 const canvas2 = document.getElementById("canvas2");
 const ctx2 = canvas2.getContext("2d");
-
-const audioSource = document.getElementById("audioSource");
 let freqAnimationRunning = false;
-audio.volume = 0.5; // 50%
-
-
-async function analyzeAudio(audioBuffer) {
-  const numChannels = audioBuffer.numberOfChannels;
-  const step = 1024; // number of samples per frame
-  let globalMaxDB = -Infinity;
-
-  for (let ch = 0; ch < numChannels; ch++) {
-    const data = audioBuffer.getChannelData(ch);
-
-    for (let i = 0; i < data.length; i += step) {
-      const slice = data.subarray(i, i + step);
-      let sumSquares = 0;
-      for (let j = 0; j < slice.length; j++) sumSquares += slice[j] ** 2;
-      const rms = Math.sqrt(sumSquares / slice.length);
-
-      // Convert linear RMS to dB
-      const db = 20 * Math.log10(rms + 1e-8); // small epsilon to avoid log(0)
-      if (db > globalMaxDB) globalMaxDB = db;
-    }
-  }
-
-  // Store globally for scaling in buckets
-  window.globalMaxDB = globalMaxDB;
-
-  return globalMaxDB;
-}
-
-
-async function init(id) {
-
-  const response = await fetch(`/temp-audio/${id}`);
-  const arrayBuffer = await response.arrayBuffer();
-
-  // Decode into AudioBuffer
-const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-
-  const globalMaxDB = await analyzeAudio(audioBuffer);
-
-  // Now you can use globalMaxDB in getFrequencyBucketsLogDB
-  window.globalMaxDB = globalMaxDB; // store globally if needed
-}
-
+audio.volume = 0.5;
 
 const numBuckets = 10;
-const displayedBuckets = Array(numBuckets).fill(0);
+let globalMaxDB = -80;
 
-let smoothedMinDB = -80; // start floor
-const minFollowSpeed = 0.7; // closer to 1 = slower to move
-
+// --- Frequency spectrum ---
 function getFrequencyBucketsLogDB() {
   const floatArray = new Float32Array(analyser.frequencyBinCount);
-  analyser.getFloatFrequencyData(floatArray); // dB values
+  analyser.getFloatFrequencyData(floatArray);
 
-  const numBuckets = 10;
   const buckets = [];
   const sampleRate = audioCtx.sampleRate;
   const fftSize = analyser.fftSize;
@@ -122,27 +70,21 @@ function getFrequencyBucketsLogDB() {
     buckets.push(avgDB);
   }
 
-  // Absolute scaling in dB
-    const minDB = -80;      // quiet floor
-  const maxDB = window.globalMaxDB -18; //  lower peak by 18 decibel
-  const ceiling = 1;    // 90% of canvas height
-
+  const minDB = -80;
+  const ceiling = 1;
   return buckets.map(db => {
-    let val = (db - minDB) / (maxDB - minDB);
+    let val = (db - minDB) / (globalMaxDB - minDB);
     val = Math.max(0, Math.min(1, val));
     return val * ceiling;
   });
-
 }
-
 
 function drawFrequencies() {
   requestAnimationFrame(drawFrequencies);
-
   const buckets = getFrequencyBucketsLogDB();
   ctx2.clearRect(0, 0, canvas2.width, canvas2.height);
-
   const barWidth = canvas2.width / buckets.length;
+
   buckets.forEach((val, i) => {
     const barHeight = val * canvas2.height;
     ctx2.fillStyle = "#4caf50";
@@ -150,47 +92,8 @@ function drawFrequencies() {
   });
 }
 
-
-
-async function downloadAudio() {
-const url = document.getElementById("ytUrl").value;
-if (!url) return alert("Please enter a YouTube URL");
-
-const res = await fetch(`/download-audio?url=${encodeURIComponent(url)}`);
-const data = await res.json();
-if (data.error) return alert("Error downloading audio: " + data.error);
-
-const id = data.id;
-audioSource.src = `/temp-audio/${id}`; // just change src
-audioPlayer.load();
-
-// Fetch waveform JSON
-const waveRes = await fetch(`/waveform/${id}`);
-const waveformJson = await waveRes.json();
-if (!waveformJson || !waveformJson.data || waveformJson.data.length === 0) {
-  console.warn("No waveform found for audio ID:", id);
-  return;
-}
-const waveformData = waveformJson.data;
-
-// Normalize waveform data -1..1
-const maxVal = Math.max(...waveformData);
-const minVal = Math.min(...waveformData);
-const normalizedWaveform = maxVal === minVal
-    ? waveformData.map(_ => 0)
-    : waveformData.map(v => 2 * (v - minVal) / (maxVal - minVal) - 1);
-
-audioPlayer.onloadedmetadata = () => {
-  animateWaveform(normalizedWaveform, audioPlayer);
-  if (!freqAnimationRunning) {
-    freqAnimationRunning = true;
-    drawFrequencies();
-  }
-};
-await init(id);
-}
-
-  function downsampleWaveform(data, width) {
+// --- Waveform helper ---
+function downsampleWaveform(data, width) {
   const downsampled = [];
   const factor = Math.floor(data.length / width);
 
@@ -200,79 +103,116 @@ await init(id);
       downsampled.push({ min: 0, max: 0 });
       continue;
     }
-
-    // RMS for perceived loudness
     let sumSquares = 0;
     slice.forEach(v => sumSquares += v * v);
     const rms = Math.sqrt(sumSquares / slice.length);
-
     downsampled.push({ min: -rms, max: rms });
   }
-
   return downsampled;
 }
 
+function animateWaveform(data, audio) {
+  const canvas = document.getElementById("waveformCanvas");
+  const ctx = canvas.getContext("2d");
+  const middleY = canvas.height / 2;
+  const amplitude = middleY;
+  const waveform = downsampleWaveform(data, canvas.width);
 
-  function animateWaveform(data, audio) {
-    const canvas = document.getElementById("waveformCanvas");
-    const ctx = canvas.getContext("2d");
-    const middleY = canvas.height / 2;
-    const amplitude = middleY;
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const progress = audio.currentTime / audio.duration;
+    const progressX = Math.floor(progress * canvas.width);
 
-    const waveform = downsampleWaveform(data, canvas.width);
-
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      const progress = audio.currentTime / audio.duration; // 0 → 1
-      const progressX = Math.floor(progress * canvas.width);
-
-      for (let x = 0; x < waveform.length; x++) {
-        const { min, max } = waveform[x];
-        const y1 = middleY - max * amplitude;
-        const y2 = middleY - min * amplitude;
-
-        ctx.fillStyle = x < progressX ? "#4caf50" : "#ccc";
-        ctx.fillRect(x, Math.min(y1, y2), 1, Math.abs(y2 - y1));
-      }
-
-      requestAnimationFrame(draw);
+    for (let x = 0; x < waveform.length; x++) {
+      const { min, max } = waveform[x];
+      const y1 = middleY - max * amplitude;
+      const y2 = middleY - min * amplitude;
+      ctx.fillStyle = x < progressX ? "#4caf50" : "#ccc";
+      ctx.fillRect(x, Math.min(y1, y2), 1, Math.abs(y2 - y1));
     }
-
-    draw();
+    requestAnimationFrame(draw);
   }
+  draw();
+}
 
-  audio.addEventListener("play", async () => {
+// --- Download + display audio ---
+/*
+async function downloadAudio() {
+  const ytUrl = document.getElementById("ytUrl").value;
+  if (!ytUrl) return alert("Please enter a YouTube URL");
+
+  const res = await fetch(`/download-audio?url=${encodeURIComponent(ytUrl)}`);
+  const data = await res.json();
+  if (data.error) return alert("Error: " + data.error);
+
+  audioSource.src = data.url;
+  audioPlayer.load();
+
+  const waveformData = data.waveform;
+  const maxVal = Math.max(...waveformData);
+  const minVal = Math.min(...waveformData);
+  const normalizedWaveform = maxVal === minVal
+    ? waveformData.map(_ => 0)
+    : waveformData.map(v => 2 * (v - minVal) / (maxVal - minVal) - 1);
+
+  audioPlayer.onloadedmetadata = () => {
+    animateWaveform(normalizedWaveform, audioPlayer);
+    if (!freqAnimationRunning) {
+      freqAnimationRunning = true;
+      drawFrequencies();
+    }
+  };
+
+  // Decode audio in AudioContext for globalMaxDB
+  const arrayBuffer = await (await fetch(data.url)).arrayBuffer();
+  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+  const channelData = audioBuffer.getChannelData(0);
+  globalMaxDB = 20 * Math.log10(Math.max(...channelData.map(v => Math.abs(v))) + 1e-8);
+}*/
+
+async function downloadAudio() {
+  const ytUrl = document.getElementById("ytUrl").value;
+  if (!ytUrl) return alert("Please enter a YouTube URL");
+
+  const res = await fetch(`/download-audio?url=${encodeURIComponent(ytUrl)}`);
+  const data = await res.json();
+  if (data.error) return alert("Error: " + data.error);
+
+  const audio = document.getElementById("audioPlayer");
+  const audioSource = document.getElementById("audioSource");
+  audioSource.src = data.url;
+  audio.load();
+  audio.play();
+}
+
+audio.addEventListener("play", async () => {
   if (audioCtx.state === "suspended") await audioCtx.resume();
 });
-  </script>
+</script>
 
+<h1>Sentiment Checker</h1>
+<textarea id="textInput" placeholder="Type your text here..."></textarea>
+<br>
+<button onclick="checkSentiment()">Check Sentiment</button>
+<div class="result" id="result"></div>
 
-  <h1>Sentiment Checker</h1>
-  <textarea id="textInput" placeholder="Type your text here..."></textarea>
-  <br>
-  <button onclick="checkSentiment()">Check Sentiment</button>
+<script>
+async function checkSentiment() {
+  const text = document.getElementById("textInput").value;
+  if (!text) return alert("Please enter some text.");
 
-  <div class="result" id="result"></div>
+  const response = await fetch("/sentiment", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text })
+  });
 
-  <script>
-    async function checkSentiment() {
-      const text = document.getElementById("textInput").value;
-      if (!text) return alert("Please enter some text.");
-
-      const response = await fetch("/sentiment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text })
-      });
-
-      const data = await response.json();
-
-      document.getElementById("result").innerHTML =
-        `Score: ${data.score} <br>
-         Comparative: ${data.comparative} <br>
-         Words: ${data.words.join(", ")}`;
-    }
-  </script>
+  const data = await response.json();
+  document.getElementById("result").innerHTML =
+    `Score: ${data.score} <br>
+     Comparative: ${data.comparative} <br>
+     Words: ${data.words.join(", ")}`;
+}
+</script>
 </body>
 </html>
