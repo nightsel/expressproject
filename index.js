@@ -16,6 +16,7 @@ import os from "os";
 
 import { spawn } from "child_process";
 import ytdlp from 'yt-dlp-exec';
+import { fileURLToPath } from "url";
 
 /*async function downloadYouTubeToBuffer(url) {
   return new Promise((resolve, reject) => {
@@ -198,24 +199,19 @@ app.get("/download-audio", async (req, res) => {
 
   try {
     // --- Download YouTube audio to temp file ---
-    await new Promise((resolve, reject) => {
-      const ytProcess = spawn("yt-dlp", [
-        "-x",
-        "--audio-format", "mp3",
-        "-o", tempPath,
-        url
-      ]);
 
-      let errData = "";
-      ytProcess.stderr.on("data", chunk => errData += chunk.toString());
-      ytProcess.on("error", reject);
-      ytProcess.on("close", code => {
-        if (code !== 0) return reject(new Error(`yt-dlp failed:\n${errData}`));
-        resolve();
-      });
+
+    // --- Download YouTube audio to temp file using yt-dlp-exec ---
+    await ytdlp(url, {
+      extractAudio: true,
+      output: tempPath,
+      quiet: true,
+      noWarnings: true,
+      preferFreeFormats: true,
     });
 
-    // --- Read temp file ---
+    // --- Read the temp file into a Buffer ---
+
     const buffer = fs.readFileSync(tempPath);
 
     // --- Upload to Supabase ---
@@ -226,6 +222,7 @@ app.get("/download-audio", async (req, res) => {
 
     if (uploadError) throw uploadError;
 
+    // --- Create a signed URL ---
     const { data: signedData, error: signedError } = await supabase
       .storage
       .from(bucketName)
