@@ -17,7 +17,7 @@
   <h2>Download Audio</h2>
   <input type="text" id="audioUrl" placeholder="Enter audio URL (e.g., SoundCloud, other direct links)">
   <p style="color: red; font-size: 0.9em;">
-    Note: YouTube links will not work due to anti-bot protections. Please use other sources.
+    Note: YouTube links will not work due to anti-bot protections. Please use other sources. Be careful with the volume.
   </p>
   <button id="downloadBtn" onclick="downloadAudio()">Download Audio</button>
 
@@ -47,6 +47,7 @@ const analyser = audioCtx.createAnalyser();
 analyser.fftSize = 2048;
 let source = null;
 let waveformData = null;
+audio.volume = 0.5; // 50%
 const numBuckets = 10;
 
 

@@ -251,6 +251,9 @@ app.get("/proxy-audio", async (req, res) => {
     const fileUrl = req.query.url;
     if (!fileUrl) return res.status(400).json({ error: "Missing ?url parameter" });
 
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Headers", "*");
+
     const upstream = await fetch(fileUrl);
     if (!upstream.ok) return res.status(500).json({ error: "Failed to fetch audio" });
 
