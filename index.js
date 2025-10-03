@@ -45,7 +45,145 @@ const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+/*
 
+import { Player } from "textalive-app-api";
+import fetch from "node-fetch"; // or "import fetch from 'node-fetch'" in ESM
+
+const player = new Player({
+  app: {
+    token: process.env.TEXTALIVE_TOKEN, // your token
+    name: "My Audio Player"
+  }
+});
+
+const songUrl = "https://www.nicovideo.jp/watch/so45125163";
+
+await player.createFromSongUrl(songUrl);
+
+async function displayLyricsWithTimings(player) {
+  if (!player.data.lyrics?.url) {
+    console.log("No lyrics URL available");
+    return;
+  }
+
+  // Fetch raw lyrics
+  const response = await fetch(player.data.lyrics.url);
+  const text = await response.text();
+
+  const lines = text
+    .split("\n")
+    .filter(line => line.trim() !== "");
+
+  const lyricArrays = player.data.lyrics.data;
+
+  // Skip metadata rows at the top
+  const skipCount = lines.length - lyricArrays.length;
+  const lyricLines = lines.slice(skipCount);
+
+  const timedLyrics = lyricLines.map((lineText, i) => {
+    const syllables = lyricArrays[i];
+    if (!syllables || syllables.length === 0) {
+      return { text: lineText, startTime: undefined, endTime: undefined, syllables: [] };
+    }
+
+    // Optionally, split text into "syllables" (naive split: 1 char per syllable)
+    // You can replace this with more advanced kana/romaji split if needed
+    const chars = [...lineText];
+    const syllableCount = syllables.length;
+    const charsPerSyllable = Math.ceil(chars.length / syllableCount);
+    const textSyllables = [];
+    for (let j = 0; j < syllableCount; j++) {
+      textSyllables.push(chars.slice(j * charsPerSyllable, (j + 1) * charsPerSyllable).join(""));
+    }
+
+    // Combine timings with text
+    const timedSyllables = syllables.map((s, idx) => ({
+      text: textSyllables[idx] || "",
+      startTime: s.start_time,
+      endTime: s.end_time
+    }));
+
+    return {
+      text: lineText,
+      startTime: timedSyllables[0].startTime,
+      endTime: timedSyllables[timedSyllables.length - 1].endTime,
+      syllables: timedSyllables
+    };
+  });
+
+  // Print everything
+  timedLyrics.forEach((line, idx) => {
+    console.log(`Line ${idx + 1}: "${line.text}" [${line.startTime?.toFixed(2)} - ${line.endTime?.toFixed(2)}]`);
+    line.syllables.forEach((s, i) => {
+      console.log(`  Syllable ${i + 1}: "${s.text}" [${s.startTime?.toFixed(2)} - ${s.endTime?.toFixed(2)}]`);
+    });
+  });
+}
+
+displayLyricsWithTimings(player);*/
+
+/*
+async function fetchLyrics(songUrl) {
+  try {
+    await player.createFromSongUrl(songUrl);
+
+    const lyrics = player.data.lyrics;
+
+    //console.log("Raw lyrics:", JSON.stringify(player.data.lyrics, null, 2));
+    //console.log(JSON.stringify(player.data.lyrics.data[0][0], null, 2));
+    if (!lyrics || !lyrics.data) {
+      console.log("No lyrics available for this song");
+      return [];
+    }
+
+    const timedLyrics = player.data.lyrics.data
+      .flatMap(line => line)   // flatten phrases
+      .flatMap(part => part)   // flatten words/parts
+      .map(l => ({
+        startTime: l.start_time,
+        endTime: l.end_time,
+        text: l.text || ""  // fallback to empty string if text missing
+      }));
+    return timedLyrics;
+  } catch (err) {
+    console.error("Failed to fetch lyrics:", err);
+    return [];
+  }
+}
+import { load } from "cheerio"; // <- correct import
+
+async function fetchPiaproLyrics(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+    const html = await res.text();
+
+    const $ = load(html);
+
+    // Piapro usually wraps lyrics in <div class="itemBody">
+    const lyrics = $(".itemBody")
+      .text()
+      .split("\n")
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+
+    return lyrics;
+  } catch (err) {
+    console.error("Failed to fetch Piapro lyrics:", err);
+    return [];
+  }
+}
+
+// Example usage
+const url = "https://www.nicovideo.jp/watch/so45125163"; // the URL from your song object
+fetchPiaproLyrics(url).then(lyrics => {
+  console.log("Lyrics lines:", lyrics);
+});
+
+//fetchLyrics("http://nicovideo.jp%2Fwatch%2Fsm33447778");
+
+fetchLyrics("https://www.nicovideo.jp/watch/so45125163");*/
 /*
 const buffer = await downloadYouTubeToBuffer(url);
 const filename = `temp_audio_${uuidv4()}.mp3`;
@@ -59,6 +197,34 @@ if (error) throw error;
 
 const publicUrl = supabase.storage.from("audio").getPublicUrl(filename).data.publicUrl;
 return publicUrl;*/
+/*
+import fetch from "node-fetch"; // or native fetch in Node 18+
+import { load } from "cheerio";
+
+async function fetchLyrics(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+    const html = await res.text();
+
+    const $ = load(html);
+    const lyrics = $(".itemBody")
+      .text()
+      .split("\n")
+      .map(line => line.trim())
+      .filter(line => line.length > 0);
+
+    return lyrics; // returns an array of lines
+  } catch (err) {
+    console.error("Failed to fetch Piapro lyrics:", err);
+    return [];
+  }
+}*/
+import axios from "axios";
+import * as cheerio from "cheerio";
+
+
+
 
 
 const { Pool } = pkg;
@@ -171,6 +337,78 @@ setInterval(cleanOldFiles, 5 * 60 * 1000);*/
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 app.use(express.static("public"));
+
+async function getLyricsAZ(artist, song) {
+  const formattedArtist = artist.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const formattedSong = song.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const url = `https://www.azlyrics.com/lyrics/${formattedArtist}/${formattedSong}.html`;
+
+  try {
+    const { data } = await axios.get(url);
+    const $ = cheerio.load(data);
+    const mainDiv = $('div.col-xs-12.col-lg-8.text-center').first();
+    const lyricsDiv = mainDiv.children('div').filter((i, el) => !el.attribs.class && !el.attribs.id).first();
+    const lines = lyricsDiv.text().trim().split('\n').map(line => line.trim()).filter(Boolean);
+    if (lines.length === 0) throw new Error("No lyrics found");
+    return lines;
+  } catch (err) {
+    console.warn("AZLyrics failed:", err.message);
+    return null;
+  }
+}
+
+async function getLyricsLN(artist, song) {
+  const formattedArtist = artist.toLowerCase().replace(/[^a-z0-9]/g, '-');
+  const formattedSong = song.toLowerCase().replace(/[^a-z0-9]/g, '-');
+  const url = `https://www.lyrical-nonsense.com/lyrics/${formattedArtist}/${formattedSong}/`;
+
+  try {
+    const { data } = await axios.get(url);
+    const $ = cheerio.load(data);
+
+    // Prefer Romaji if available
+    let lyricsDiv = $('#Romaji #PriLyr');
+
+    // If Romaji not found, fall back to any PriLyr
+    if (!lyricsDiv.length) {
+      lyricsDiv = $('#PriLyr');
+    }
+
+    if (!lyricsDiv.length) throw new Error("No lyrics found");
+
+    // Convert <br> to newline
+    lyricsDiv.find('br').replaceWith('\n');
+
+    // Split by newline, trim, filter empty lines, remove leading numbers
+    const lines = lyricsDiv.text()
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean)
+      .map(line => line.replace(/^\d+\.\s?/, ''));
+
+    return lines;
+  } catch (err) {
+    console.warn("Lyrical Nonsense failed:", err.message);
+    return null;
+  }
+}
+
+export async function getLyrics(artist, song) {
+  let lines = await getLyricsAZ(artist, song);
+  if (!lines) {
+    lines = await getLyricsLN(artist, song);
+  }
+  return lines || [];
+}
+
+//getLyrics("*luna", "asterarium").then(console.log)
+
+app.get("/lyrics", async (req, res) => {
+  const { artist, song } = req.query;
+  if (!artist || !song) return res.status(400).json({ error: "artist and song required" });
+  const lines = await getLyrics(artist, song);
+  res.json({ lines });
+});
 
 const sentiment = new Sentiment();
 
@@ -296,6 +534,7 @@ app.get("/proxy-audio", async (req, res) => {
     res.status(500).json({ error: "Proxy failed" });
   }
 });
+
 
 
 
