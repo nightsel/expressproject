@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>YouTube Audio + Waveform</title>
+  <title>Audio + Waveform</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 50px; }
     textarea, input { width: 100%; }
@@ -14,10 +14,9 @@
 </head>
 <body>
 
-<h2>Download YouTube Audio</h2>
-<input type="text" id="ytUrl" placeholder="Enter YouTube URL">
+<h2>Download Audio</h2>
+<input type="text" id="audioUrl" placeholder="Enter audio URL (YouTube, SoundCloud, etc.)">
 <button id="downloadBtn" onclick="downloadAudio()">Download Audio</button>
-
 
 <audio id="audioPlayer" controls disabled></audio>
 
@@ -130,28 +129,27 @@ function drawFrequencies() {
 // --- Download audio ---
 async function downloadAudio() {
 
-    const ytUrl = document.getElementById("ytUrl").value.trim();
-    if (!ytUrl) return alert("Please enter a YouTube URL");
+    const audioUrl = document.getElementById("audioUrl").value.trim();
+    if (!audioUrl) return alert("Please enter an audio URL");
 
-    const res = await fetch(`/download-audio?url=${encodeURIComponent(ytUrl)}`);
+    const res = await fetch(`/download-audio?url=${encodeURIComponent(audioUrl)}`);
     const data = await res.json();
     if (data.error) return alert("Error: " + data.error);
 
-    const audioUrl = `/proxy-audio?url=${encodeURIComponent(data.url)}`;
+    const proxiedUrl = `/proxy-audio?url=${encodeURIComponent(data.url)}`;
 
     // Decode waveform before assigning src
-    const arrayBuffer = await (await fetch(audioUrl)).arrayBuffer();
+    const arrayBuffer = await (await fetch(proxiedUrl)).arrayBuffer();
     const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
     waveformData = downsampleWaveform(audioBuffer.getChannelData(0), waveformCanvas.width);
 
     // Assign src only after decoding
-    audio.src = audioUrl;
+    audio.src = proxiedUrl;
     // prevent users from pressing play button too fast
     audio.onloadedmetadata = () => {
      audio.removeAttribute('disabled'); // now user can play
  };
     audio.load();
-
 }
 
 // --- Play audio safely ---
