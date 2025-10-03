@@ -190,14 +190,14 @@ app.post("/sentiment", (req, res) => {
 // download and save to Supabase
 app.get("/download-audio", async (req, res) => {
   const { url } = req.query;
-  if (!url) return res.status(400).json({ error: "Missing YouTube URL" });
+  if (!url) return res.status(400).json({ error: "Missing audio URL" });
 
   const id = uuidv4();
   const tempPath = path.join(os.tmpdir(), `temp_audio_${id}.mp3`);
   const bucketName = "audio";
 
   try {
-    // --- Download YouTube audio to temp file using yt-dlp-exec ---
+    // --- Download audio from YouTube/SoundCloud using yt-dlp ---
     await ytdlp(url, {
       extractAudio: true,
       audioFormat: "mp3",
@@ -214,7 +214,11 @@ app.get("/download-audio", async (req, res) => {
     const { error: uploadError } = await supabase
       .storage
       .from(bucketName)
-      .upload(`temp_audio_${id}.mp3`, buffer, { cacheControl: "3600", upsert: true });
+      .upload(`temp_audio_${id}.mp3`, buffer, {
+        cacheControl: "3600",
+        upsert: true,
+        contentType: "audio/mpeg",
+      });
 
     if (uploadError) throw uploadError;
 
@@ -225,7 +229,7 @@ app.get("/download-audio", async (req, res) => {
       .createSignedUrl(`temp_audio_${id}.mp3`, 60 * 60);
 
     if (signedError) throw signedError;
-    if (!signedData || !signedData.signedUrl) throw new Error("Signed URL not returned");
+    if (!signedData?.signedUrl) throw new Error("Signed URL not returned");
 
     res.json({ url: signedData.signedUrl });
 
