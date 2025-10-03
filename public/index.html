@@ -14,20 +14,28 @@
 </head>
 <body>
 
-<h2>Download Audio</h2>
-<input type="text" id="audioUrl" placeholder="Enter audio URL (YouTube, SoundCloud, etc.)">
-<button id="downloadBtn" onclick="downloadAudio()">Download Audio</button>
+  <h2>Download Audio</h2>
+  <input type="text" id="audioUrl" placeholder="Enter audio URL (e.g., SoundCloud, other direct links)">
+  <p style="color: red; font-size: 0.9em;">
+    Note: YouTube links will not work due to anti-bot protections. Please use other sources.
+  </p>
+  <button id="downloadBtn" onclick="downloadAudio()">Download Audio</button>
 
-<audio id="audioPlayer" controls disabled></audio>
+  <audio id="audioPlayer" controls>
+      <source id="audioSource" type="audio/mpeg">
+  </audio>
 
-<h2>Waveform</h2>
+<h2>Waveform (clickable)</h2>
 <canvas id="waveformCanvas" width="1000" height="200"></canvas>
 
 <h2>Frequency Spectrum</h2>
 <canvas id="canvas2" width="1000" height="200"></canvas>
 
+
+
 <script>
 const audio = document.getElementById("audioPlayer");
+const audioSource = document.getElementById("audioSource");
 
 const waveformCanvas = document.getElementById("waveformCanvas");
 const waveformCtx = waveformCanvas.getContext("2d");
@@ -40,6 +48,7 @@ analyser.fftSize = 2048;
 let source = null;
 let waveformData = null;
 const numBuckets = 10;
+
 
 // Only create the MediaElementSource once
 if (!source) {
@@ -144,13 +153,19 @@ async function downloadAudio() {
     waveformData = downsampleWaveform(audioBuffer.getChannelData(0), waveformCanvas.width);
 
     // Assign src only after decoding
-    audio.src = proxiedUrl;
-    // prevent users from pressing play button too fast
-    audio.onloadedmetadata = () => {
-     audio.removeAttribute('disabled'); // now user can play
- };
-    audio.load();
+    audioSource.src = proxiedUrl;
+    audio.load(); // ensures native UI updates correctly
 }
+
+// Make audio  clickable to jump to any point
+waveformCanvas.addEventListener("click", (e) => {
+    const rect = waveformCanvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percentage = clickX / waveformCanvas.width;
+    audio.currentTime = percentage * audio.duration;
+});
+
+
 
 // --- Play audio safely ---
 audio.addEventListener("play", async () => {

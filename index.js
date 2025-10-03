@@ -249,38 +249,44 @@ app.get("/download-audio", async (req, res) => {
 app.get("/proxy-audio", async (req, res) => {
   try {
     const fileUrl = req.query.url;
-    if (!fileUrl) {
-      return res.status(400).json({ error: "Missing ?url parameter" });
-    }
+    if (!fileUrl) return res.status(400).json({ error: "Missing ?url parameter" });
 
-    // Fetch the file from Supabase (or any upstream URL)
     const upstream = await fetch(fileUrl);
-    if (!upstream.ok) {
-      return res.status(500).json({ error: "Failed to fetch audio" });
+    if (!upstream.ok) return res.status(500).json({ error: "Failed to fetch audio" });
+
+    const arrayBuffer = await upstream.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const range = req.headers.range;
+    const total = buffer.length;
+
+    if (range) {
+      // Parse range header
+      const match = range.match(/bytes=(\d+)-(\d*)/);
+      if (!match) return res.status(400).send("Malformed range header");
+
+      const start = parseInt(match[1], 10);
+      const end = match[2] ? parseInt(match[2], 10) : total - 1;
+
+      res.status(206); // Partial Content
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Content-Length", (end - start) + 1);
+      res.setHeader("Content-Type", "audio/mpeg");
+
+      res.end(buffer.slice(start, end + 1));
+    } else {
+      res.setHeader("Content-Length", total);
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.end(buffer);
     }
-
-    // Set correct Content-Type for audio
-    res.setHeader("Content-Type", "audio/mpeg");
-
-    // Convert Web ReadableStream → Node.js stream and pipe to response
-    const nodeStream = Readable.from(upstream.body);
-    nodeStream.pipe(res);
-
-    nodeStream.on("end", () => {
-      console.log("Audio streamed successfully");
-    });
-
-    nodeStream.on("error", (err) => {
-      console.error("Stream error:", err);
-      res.end();
-    });
 
   } catch (err) {
-    console.error("Proxy error:", err);
+    console.error(err);
     res.status(500).json({ error: "Proxy failed" });
   }
 });
-
 
 
 
