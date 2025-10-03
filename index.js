@@ -245,6 +245,12 @@ app.get("/download-audio", async (req, res) => {
   }
 });
 
+// for personal debugging
+app.get("/my-audio", (req, res) => {
+  const filePath = path.join(process.cwd(), "public/proxy-audio.mp3");
+  res.sendFile(filePath);
+});
+
 
 app.get("/proxy-audio", async (req, res) => {
   try {
