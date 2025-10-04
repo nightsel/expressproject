@@ -1,5 +1,5 @@
 // Full-stack project with persistent votes and user feedback stored in PostgreSQL, accessible via Express API.
-
+//process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 import express from "express";
 import cors from "cors";
 import Sentiment from "sentiment";
@@ -220,6 +220,7 @@ async function fetchLyrics(url) {
     return [];
   }
 }*/
+
 import axios from "axios";
 import * as cheerio from "cheerio";
 
@@ -338,47 +339,34 @@ app.use(cors({ origin: "*" }));
 app.use(express.json());
 app.use(express.static("public"));
 
-const GENIUS_TOKEN = process.env.GENIUS_ACCESS_TOKEN;
+//const GENIUS_TOKEN = process.env.GENIUS_ACCESS_TOKEN;
+//import https from "https";
+console.log(process.env.GENIUS_ACCESS_TOKEN);
 
-export async function getLyricsGenius(artist, song) {
+//const httpsAgent = new https.Agent({ rejectUnauthorized: false });
+
+async function getLyricsGenius(artist, song) {
   try {
-    // 1️⃣ Search for the song
     const searchRes = await axios.get("https://api.genius.com/search", {
-      headers: {
-        Authorization: `Bearer ${GENIUS_TOKEN}`,
-        "User-Agent": "LyricsApp/1.0"
-      },
+      headers: { Authorization: `Bearer ${process.env.GENIUS_ACCESS_TOKEN}`,
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" // fake browser header
+  },
+  //httpsAgent,
+
       params: { q: `${artist} ${song}` },
-      timeout: 5000
     });
 
     const hits = searchRes.data.response.hits;
-    if (!hits.length) throw new Error("No song found on Genius");
+    if (!hits.length) return null;
 
-    // 2️⃣ Get the song page URL
-    const songUrl = hits[0].result.url;
-
-    // 3️⃣ Fetch song page HTML
-    const { data: pageHtml } = await axios.get(songUrl, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-      timeout: 5000
-    });
-
-    const $ = cheerio.load(pageHtml);
-
-    // 4️⃣ Extract lyrics from page
-    const containers = $('[data-lyrics-container="true"]');
-    if (!containers.length) throw new Error("No lyrics found in Genius page");
+    const songUrl = `https://genius.com${hits[0].result.path}`;
+    const pageRes = await axios.get(songUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+    const $ = cheerio.load(pageRes.data);
 
     const lines = [];
-    containers.each((i, el) => {
-      $(el)
-        .text()
-        .split("\n")
-        .forEach((line) => {
-          const t = line.trim();
-          if (t) lines.push(t);
-        });
+    $('div[data-lyrics-container="true"]').each((_, el) => {
+      const text = $(el).text().trim();
+      if (text) lines.push(...text.split("\n").map(l => l.trim()).filter(Boolean));
     });
 
     return lines.length ? lines : null;
