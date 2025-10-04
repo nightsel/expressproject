@@ -345,15 +345,12 @@ async function getLyricsAZ(artist, song) {
 
   try {
     const { data } = await axios.get(url);
-    const $ = cheerio.load(data);
-    const mainDiv = $('div.col-xs-12.col-lg-8.text-center').first();
-    const lyricsDiv = mainDiv.children('div').filter((i, el) => !el.attribs.class && !el.attribs.id).first();
-    const lines = lyricsDiv.text().trim().split('\n').map(line => line.trim()).filter(Boolean);
-    if (lines.length === 0) throw new Error("No lyrics found");
-    return lines;
+    console.log("Fetched HTML snippet:", data.slice(0, 300)); // first 300 chars
+    const lines = await getLyrics(artist, song);
+    res.json({ lines });
   } catch (err) {
-    console.warn("AZLyrics failed:", err.message);
-    return null;
+    console.error("Fetch failed:", err.message);
+    res.json({ lines: [] });
   }
 }
 
@@ -398,10 +395,11 @@ export async function getLyrics(artist, song) {
   if (!lines) {
     lines = await getLyricsLN(artist, song);
   }
+
   return lines || [];
 }
 
-//getLyrics("*luna", "asterarium").then(console.log)
+getLyrics("coldplay", "yellow").then(console.log)
 
 app.get("/lyrics", async (req, res) => {
   const { artist, song } = req.query;
