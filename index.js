@@ -338,6 +338,57 @@ app.use(cors({ origin: "*" }));
 app.use(express.json());
 app.use(express.static("public"));
 
+const GENIUS_TOKEN = process.env.GENIUS_ACCESS_TOKEN;
+
+export async function getLyricsGenius(artist, song) {
+  try {
+    // 1️⃣ Search for the song
+    const searchRes = await axios.get("https://api.genius.com/search", {
+      headers: {
+        Authorization: `Bearer ${GENIUS_TOKEN}`,
+        "User-Agent": "LyricsApp/1.0"
+      },
+      params: { q: `${artist} ${song}` },
+      timeout: 5000
+    });
+
+    const hits = searchRes.data.response.hits;
+    if (!hits.length) throw new Error("No song found on Genius");
+
+    // 2️⃣ Get the song page URL
+    const songUrl = hits[0].result.url;
+
+    // 3️⃣ Fetch song page HTML
+    const { data: pageHtml } = await axios.get(songUrl, {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      timeout: 5000
+    });
+
+    const $ = cheerio.load(pageHtml);
+
+    // 4️⃣ Extract lyrics from page
+    const containers = $('[data-lyrics-container="true"]');
+    if (!containers.length) throw new Error("No lyrics found in Genius page");
+
+    const lines = [];
+    containers.each((i, el) => {
+      $(el)
+        .text()
+        .split("\n")
+        .forEach((line) => {
+          const t = line.trim();
+          if (t) lines.push(t);
+        });
+    });
+
+    return lines.length ? lines : null;
+  } catch (err) {
+    console.warn("Genius fetch failed:", err.message);
+    return null;
+  }
+}
+
+/* Does not work due to anti bot requests.
 async function getLyricsAZ(artist, song) {
   const formattedArtist = artist.toLowerCase().replace(/[^a-z0-9]/g, '');
   const formattedSong = song.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -361,7 +412,7 @@ async function getLyricsAZ(artist, song) {
     console.warn("AZLyrics failed:", err.message);
     return null;
   }
-}
+}*/
 
 async function getLyricsLN(artist, song) {
   const formattedArtist = artist.toLowerCase().replace(/[^a-z0-9]/g, '-');
@@ -400,9 +451,9 @@ async function getLyricsLN(artist, song) {
 }
 
 export async function getLyrics(artist, song) {
-  let lines = await getLyricsAZ(artist, song);
+  let lines = await getLyricsLN(artist, song);
   if (!lines) {
-    lines = await getLyricsLN(artist, song);
+    lines = await getLyricsGenius(artist, song);
   }
 
   return lines || [];
