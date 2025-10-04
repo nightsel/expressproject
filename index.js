@@ -341,7 +341,7 @@ app.use(express.static("public"));
 
 //const GENIUS_TOKEN = process.env.GENIUS_ACCESS_TOKEN;
 //import https from "https";
-console.log(process.env.GENIUS_ACCESS_TOKEN);
+
 
 //const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
