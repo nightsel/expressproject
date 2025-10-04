@@ -402,7 +402,7 @@ export async function getLyrics(artist, song) {
   return lines || [];
 }
 
-getLyrics("coldplay", "yellow").then(console.log)
+//getLyrics("coldplay", "yellow").then(console.log)
 
 app.get("/lyrics", async (req, res) => {
   const { artist, song } = req.query;
