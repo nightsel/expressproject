@@ -759,10 +759,11 @@ app.get("/download-audio", async (req, res) => {
     fs.unlinkSync(tempPath);
 
   } catch (err) {
-    console.error("Download/upload error:", err);
-    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-    res.status(500).json({ error: "Failed to download/upload audio" });
-  }
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+
+      // Return a friendly message for the frontend
+      res.json({ error: "Please check the URL and try again." });
+    }
 });
 
 // for personal debugging
