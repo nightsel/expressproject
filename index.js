@@ -417,14 +417,22 @@ async function getLyricsGenius(artist, song) {
   }
 }
 
+
 export default getLyricsGenius;*/
 
-const cmd = `curl -k -L -s -A "Mozilla/5.0" "https://genius.com/Coldplay-yellow-lyrics"`;
+
+
+
+
+// debug
+const cmd = `curl -k -L -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "https://genius.com/Coldplay-yellow-lyrics"`;
 const html = await new Promise((resolve, reject) => {
-  exec(cmd, (err, stdout) => err ? reject(err) : resolve(stdout));
+  exec(cmd, (err, stdout) => {
+    if (err) return reject(err);
+    resolve(stdout);
+  });
 });
 
-//debug
 const $ = cheerio.load(html);
 console.log($('div[data-lyrics-container="true"]').length); // number of matching elements
 
