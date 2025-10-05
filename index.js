@@ -392,8 +392,8 @@ exec(cmd, (err, stdout) => {
 });*/
 
 
-
-import puppeteer from "puppeteer";
+// The version below doesnt work due to cloud service not having google chrome
+/*import puppeteer from "puppeteer";
 
 async function getLyricsGenius(artist, song) {
   // Format the URL like Genius expects
@@ -427,8 +427,61 @@ async function getLyricsGenius(artist, song) {
   } finally {
     if (browser) await browser.close();
   }
-}
+}*/
 
+// test-browserless.js
+/*
+import puppeteer from "puppeteer-core";
+
+const TOKEN = process.env.BROWSERLESS_TOKEN; // set your token in env variable
+
+(async () => {
+  try {
+    const browser = await puppeteer.connect({
+      browserWSEndpoint: `wss://production-sfo.browserless.io?token=${TOKEN}`,
+    });
+
+    const page = await browser.newPage();
+    await page.goto("https://example.com/", { waitUntil: "domcontentloaded" });
+
+    const title = await page.title();
+    console.log("Page title:", title);
+
+    await browser.close();
+    console.log("Browserless test succeeded!");
+  } catch (err) {
+    console.error("Browserless test failed:", err.message);
+  }
+})();*/
+
+import Genius from "genius-lyrics-api";
+
+const options = {
+  apiKey: process.env.GENIUS_ACCESS_TOKEN, // your Genius API key
+  title: "",   // to be set per song
+  artist: "",  // to be set per song
+  optimizeQuery: true
+};
+
+export async function getLyricsGenius(artist, song) {
+  try {
+    options.title = song;
+    options.artist = artist;
+    const lyrics = await Genius.getLyrics(options);
+
+    if (!lyrics) {
+      console.warn("No lyrics found via genius-lyrics-api");
+      return null;
+    }
+
+    // Split into lines for convenience
+    const lines = lyrics.split("\n").map(l => l.trim()).filter(Boolean);
+    return lines.length ? lines : null;
+  } catch (err) {
+    console.warn("genius-lyrics-api fetch failed:", err.message);
+    return null;
+  }
+}
 
 export default getLyricsGenius;
 
