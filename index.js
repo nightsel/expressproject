@@ -17,6 +17,7 @@ import os from "os";
 import { spawn } from "child_process";
 import ytdlp from 'yt-dlp-exec';
 import { fileURLToPath } from "url";
+import puppeteer from "puppeteer-core";
 
 /*async function downloadYouTubeToBuffer(url) {
   return new Promise((resolve, reject) => {
@@ -430,10 +431,9 @@ async function getLyricsGenius(artist, song) {
 }*/
 
 // test-browserless.js
-/*
-import puppeteer from "puppeteer-core";
 
-const TOKEN = process.env.BROWSERLESS_TOKEN; // set your token in env variable
+
+/*const TOKEN = process.env.BROWSERLESS_TOKEN; // set your token in env variable
 
 (async () => {
   try {
@@ -442,7 +442,7 @@ const TOKEN = process.env.BROWSERLESS_TOKEN; // set your token in env variable
     });
 
     const page = await browser.newPage();
-    await page.goto("https://example.com/", { waitUntil: "domcontentloaded" });
+    await page.goto("https://lyricstranslate.com/en/Coldplay-Yellow-lyrics.html", { waitUntil: "domcontentloaded" });
 
     const title = await page.title();
     console.log("Page title:", title);
@@ -453,7 +453,7 @@ const TOKEN = process.env.BROWSERLESS_TOKEN; // set your token in env variable
     console.error("Browserless test failed:", err.message);
   }
 })();*/
-
+/* doesnt work. too strict policies on Genius.com
 import Genius from "genius-lyrics-api";
 
 const options = {
@@ -483,7 +483,7 @@ export async function getLyricsGenius(artist, song) {
   }
 }
 
-export default getLyricsGenius;
+export default getLyricsGenius;*/
 
 /*
 export async function getLyricsGeniusDirect(artist, song) {
@@ -562,6 +562,82 @@ async function getLyricsAZ(artist, song) {
   }
 }*/
 
+const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN;
+
+export async function getLyricsLT(artist, song) {
+  const formattedSong = song.replace(/\s+/g, "-");
+  const formattedArtist = artist.replace(/\s+/g, "-");
+  //const formattedArtist = artist;
+  //const formattedSong = song;
+  const songUrl = `https://lyricstranslate.com/en/${formattedArtist}-${formattedSong}-lyrics.html`;
+
+  // 1️⃣ Try fetching HTML via curl first
+  try {
+    const html = await new Promise((resolve, reject) => {
+      const cmd = `curl -k -L -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "${songUrl}"`;
+      exec(cmd, (err, stdout) => {
+        if (err) return reject(err);
+        resolve(stdout);
+      });
+    });
+
+    const $ = cheerio.load(html);
+    const lines = [];
+    $('#song-body').each((_, el) => {
+      const text = $(el).text().trim();
+      if (text) lines.push(...text.split("\n").map((l) => l.trim()).filter(Boolean));
+    });
+
+    if (lines.length) return lines;
+    console.warn("Curl succeeded but no lyrics found, trying axios fallback...");
+  } catch (err) {
+    console.warn("Curl failed:", err.message, "Trying axios fallback...");
+  }
+
+  // 2️⃣ Fallback: axios (might still fail on cloud)
+  try {
+    const { data } = await axios.get(songUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+    });
+
+    const $ = cheerio.load(data);
+    const lines = [];
+    $('#song-body').each((_, el) => {
+      const text = $(el).text().trim();
+      if (text) lines.push(...text.split("\n").map((l) => l.trim()).filter(Boolean));
+    });
+
+    if (lines.length) return lines;
+    console.warn("Axios succeeded but no lyrics found, trying Browserless fallback...");
+  } catch (err) {
+    console.warn("Axios fallback failed:", err.message, "Trying Browserless fallback...");
+  }
+
+  // 3️⃣ Final fallback: Browserless (works even if cloud IP is blocked)
+/*  try {
+    const browser = await puppeteer.connect({
+      browserWSEndpoint: `wss://production-sfo.browserless.io?token=${BROWSERLESS_TOKEN}`,
+    });
+
+    const page = await browser.newPage();
+    await page.goto(songUrl, { waitUntil: "domcontentloaded" });
+    const html = await page.content();
+
+    const $ = cheerio.load(html);
+    const lines = [];
+    $('div[data-lyrics-container="true"]').each((_, el) => {
+      const text = $(el).text().trim();
+      if (text) lines.push(...text.split("\n").map((l) => l.trim()).filter(Boolean));
+    });
+
+    await browser.close();
+    return lines.length ? lines : null;
+  } catch (err) {
+    console.warn("Browserless fallback failed:", err.message);
+    return null;
+  }*/
+}
+
 async function getLyricsLN(artist, song) {
   const formattedArtist = artist.toLowerCase().replace(/[^a-z0-9]/g, '-');
   const formattedSong = song.toLowerCase().replace(/[^a-z0-9]/g, '-');
@@ -600,7 +676,7 @@ async function getLyricsLN(artist, song) {
 
 export async function getLyrics(artist, song) {
   let lines = await getLyricsLN(artist, song);
-  if (!lines) lines = await getLyricsGenius(artist, song);
+  if (!lines) lines = await getLyricsLT(artist, song);
   return lines || [];
 }
 
