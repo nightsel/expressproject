@@ -665,7 +665,10 @@ async function getLyricsLN(artist, song) {
       .split('\n')
       .map(line => line.trim())
       .filter(Boolean)
-      .map(line => line.replace(/^\d+\.\s?/, ''));
+      .map(line => line
+        .replace(/^\d+\.\s?/, '')   // remove leading numbers
+        .replace(/\d+\.$/, '')      // remove trailing numbers
+      );
 
     return lines;
   } catch (err) {
