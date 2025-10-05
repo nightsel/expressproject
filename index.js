@@ -343,22 +343,26 @@ app.use(express.static("public"));
 //import https from "https";
 
 
+// cloud debug
+
+const cmd = `curl -k -H "Authorization: Bearer ${process.env.GENIUS_ACCESS_TOKEN}" "https://api.genius.com/search?q=coldplay%20yellow"`;
+
+exec(cmd, (err, stdout, stderr) => {
+  if (err) {
+    console.error("Curl failed:", err);
+    return;
+  }
+
+  try {
+    const data = JSON.parse(stdout);
+    console.log("Genius API response:", data);
+  } catch (parseErr) {
+    console.error("Failed to parse JSON:", parseErr);
+  }
+});
+
 //const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
-
-
-/*const cmd = `curl -k -H "Authorization: Bearer ${process.env.GENIUS_ACCESS_TOKEN}" "https://api.genius.com/search?q=coldplay%20yellow"`;
-console.log('input starts')
-exec(cmd, (err, stdout, stderr) => {
-  if (err) console.error(err);
-  else console.log(stdout);
-});*/
-
-//import axios from "axios";
-//import https from "https";
-//import * as cheerio from "cheerio";
-
-//import { exec } from "child_process";
 
 /* Apparently the api is very limited so not even worth using
 async function getLyricsGenius(artist, song) {
@@ -414,6 +418,7 @@ async function getLyricsGenius(artist, song) {
 }
 
 export default getLyricsGenius;*/
+
 
 async function getLyricsGeniusDirect(artist, song) {
   const formattedSong = song.replace(/\s+/g, "-");
