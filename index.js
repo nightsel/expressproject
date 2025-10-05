@@ -363,79 +363,76 @@ exec(cmd, (err, stdout, stderr) => {
 */
 //const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
+// debug song id
+/*
+const artist = "Coldplay";
+const song = "Yellow";
+const query = encodeURIComponent(`${artist} ${song}`);
+const cmd = `curl -k -s -H "Authorization: Bearer ${process.env.GENIUS_ACCESS_TOKEN}" "https://api.genius.com/search?q=${query}"`;
 
-/* Apparently the api is very limited so not even worth using
-async function getLyricsGenius(artist, song) {
+exec(cmd, (err, stdout) => {
+  if (err) return console.error("Curl failed:", err);
+
   try {
-    // 1. Encode and query Genius API using curl
-    const query = encodeURIComponent(`${artist} ${song}`);
-    const searchCmd = `curl -k -s -H "Authorization: Bearer ${process.env.GENIUS_ACCESS_TOKEN}" "https://api.genius.com/search?q=${query}"`;
+    const data = JSON.parse(stdout);
+    const hits = data.response.hits || [];
+    if (!hits.length) {
+      console.log("No hits found");
+      return;
+    }
 
-    console.log("Searching Genius:", `https://api.genius.com/search?q=${query}`);
+    hits.forEach((hit, index) => {
+      console.log(
+        `${index + 1}. Song: ${hit.result.full_title}, ID: ${hit.result.id}, URL: https://genius.com${hit.result.path}`
+      );
+    });
+  } catch (e) {
+    console.error("Failed to parse JSON:", e);
+  }
+});*/
 
-    const searchRes = await new Promise((resolve, reject) => {
-      exec(searchCmd, (err, stdout) => {
-        if (err) return reject(err);
-        try {
-          resolve(JSON.parse(stdout));
-        } catch (e) {
-          reject(new Error("Invalid JSON from Genius search"));
-        }
-      });
+
+
+import puppeteer from "puppeteer";
+
+async function getLyricsGenius(artist, song) {
+  // Format the URL like Genius expects
+  const formattedArtist = artist.replace(/\s+/g, "-");
+  const formattedSong = song.replace(/\s+/g, "-");
+  const url = `https://genius.com/${formattedArtist}-${formattedSong}-lyrics`;
+
+  let browser;
+  try {
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"], // required for many cloud providers
     });
 
-    const hits = searchRes?.response?.hits || [];
-    if (!hits.length) return null;
+    const page = await browser.newPage();
+    await page.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+    await page.goto(url, { waitUntil: "domcontentloaded" });
 
-    const songUrl = `https://genius.com${hits[0].result.path}`;
-    console.log("Fetching lyrics from:", songUrl);
+    // Wait for lyrics container to appear
+    await page.waitForSelector('div[data-lyrics-container="true"]', { timeout: 5000 });
 
-    // 2. Fetch the lyrics page HTML using curl again
-    const lyricsCmd = `curl -k -L -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "${songUrl}"`;
-    const html = await new Promise((resolve, reject) => {
-      exec(lyricsCmd, (err, stdout) => {
-        if (err) return reject(err);
-        resolve(stdout);
-      });
-    });
-
-    // 3. Parse lyrics
-    const $ = cheerio.load(html);
-    const lines = [];
-    $('div[data-lyrics-container="true"]').each((_, el) => {
-      const text = $(el).text().trim();
-      if (text)
-        lines.push(
-          ...text.split("\n").map((l) => l.trim()).filter(Boolean)
-        );
-    });
+    // Extract lyrics lines
+    const lines = await page.$$eval('div[data-lyrics-container="true"]', els =>
+      els.flatMap(el => el.innerText.split("\n").map(l => l.trim()).filter(Boolean))
+    );
 
     return lines.length ? lines : null;
   } catch (err) {
-    console.warn("Genius fetch failed:", err.message);
+    console.warn("Puppeteer fetch failed:", err.message);
     return null;
+  } finally {
+    if (browser) await browser.close();
   }
 }
 
 
-export default getLyricsGenius;*/
+export default getLyricsGenius;
 
-
-
-
-
-// debug
-const cmd = `curl -k -L -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "https://genius.com/Coldplay-yellow-lyrics"`;
-const html = await new Promise((resolve, reject) => {
-  exec(cmd, (err, stdout) => {
-    if (err) return reject(err);
-    resolve(stdout);
-  });
-});
-
-const $ = cheerio.load(html);
-console.log($('div[data-lyrics-container="true"]').length); // number of matching elements
-
+/*
 export async function getLyricsGeniusDirect(artist, song) {
   const formattedSong = song.replace(/\s+/g, "-");
   const formattedArtist = artist.replace(/\s+/g, "-");
@@ -483,7 +480,7 @@ export async function getLyricsGeniusDirect(artist, song) {
     console.warn("Axios fallback failed:", err.message);
     return null;
   }
-}
+}*/
 
 
 /* Does not work due to anti bot requests.
@@ -550,7 +547,7 @@ async function getLyricsLN(artist, song) {
 
 export async function getLyrics(artist, song) {
   let lines = await getLyricsLN(artist, song);
-  if (!lines) lines = await getLyricsGeniusDirect(artist, song);
+  if (!lines) lines = await getLyricsGenius(artist, song);
   return lines || [];
 }
 
