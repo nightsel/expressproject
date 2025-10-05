@@ -344,7 +344,7 @@ app.use(express.static("public"));
 
 
 // cloud debug
-
+/*
 const cmd = `curl -k -H "Authorization: Bearer ${process.env.GENIUS_ACCESS_TOKEN}" "https://api.genius.com/search?q=coldplay%20yellow"`;
 
 exec(cmd, (err, stdout, stderr) => {
@@ -360,7 +360,7 @@ exec(cmd, (err, stdout, stderr) => {
     console.error("Failed to parse JSON:", parseErr);
   }
 });
-
+*/
 //const httpsAgent = new https.Agent({ rejectUnauthorized: false });
 
 
@@ -420,26 +420,52 @@ async function getLyricsGenius(artist, song) {
 export default getLyricsGenius;*/
 
 
-async function getLyricsGeniusDirect(artist, song) {
+export async function getLyricsGeniusDirect(artist, song) {
   const formattedSong = song.replace(/\s+/g, "-");
   const formattedArtist = artist.replace(/\s+/g, "-");
-  const url = `https://genius.com/${formattedArtist}-${formattedSong}-lyrics`;
+  const songUrl = `https://genius.com/${formattedArtist}-${formattedSong}-lyrics`;
 
+  // 1. Try fetching HTML via curl first
   try {
-    const { data } = await axios.get(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+    const html = await new Promise((resolve, reject) => {
+      const cmd = `curl -k -L -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "${songUrl}"`;
+      exec(cmd, (err, stdout) => {
+        if (err) return reject(err);
+        resolve(stdout);
+      });
     });
-    const $ = cheerio.load(data);
 
+    const $ = cheerio.load(html);
     const lines = [];
     $('div[data-lyrics-container="true"]').each((_, el) => {
       const text = $(el).text().trim();
-      if (text) lines.push(...text.split("\n").map(l => l.trim()).filter(Boolean));
+      if (text)
+        lines.push(...text.split("\n").map((l) => l.trim()).filter(Boolean));
     });
 
+    if (lines.length) return lines;
+    // If curl succeeds but no lyrics found, fall through to axios
+    console.warn("Curl succeeded but no lyrics found, trying axios fallback...");
+  } catch (err) {
+    console.warn("Curl failed:", err.message, "Trying axios fallback...");
+  }
+
+  // 2. Fallback: axios (might fail on cloud)
+  try {
+    const axios = await import("axios");
+    const { data } = await axios.get(songUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+    });
+    const $ = cheerio.load(data);
+    const lines = [];
+    $('div[data-lyrics-container="true"]').each((_, el) => {
+      const text = $(el).text().trim();
+      if (text)
+        lines.push(...text.split("\n").map((l) => l.trim()).filter(Boolean));
+    });
     return lines.length ? lines : null;
   } catch (err) {
-    console.warn("Genius direct scrape failed:", err.message);
+    console.warn("Axios fallback failed:", err.message);
     return null;
   }
 }
