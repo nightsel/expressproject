@@ -419,6 +419,14 @@ async function getLyricsGenius(artist, song) {
 
 export default getLyricsGenius;*/
 
+const cmd = `curl -k -L -s -A "Mozilla/5.0" "https://genius.com/Coldplay-yellow-lyrics"`;
+const html = await new Promise((resolve, reject) => {
+  exec(cmd, (err, stdout) => err ? reject(err) : resolve(stdout));
+});
+
+//debug
+const $ = cheerio.load(html);
+console.log($('div[data-lyrics-container="true"]').length); // number of matching elements
 
 export async function getLyricsGeniusDirect(artist, song) {
   const formattedSong = song.replace(/\s+/g, "-");
@@ -452,7 +460,6 @@ export async function getLyricsGeniusDirect(artist, song) {
 
   // 2. Fallback: axios (might fail on cloud)
   try {
-    const axios = await import("axios");
     const { data } = await axios.get(songUrl, {
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
     });
