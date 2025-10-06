@@ -590,6 +590,8 @@ async function searchUtaten(artist, title) {
      const $ = cheerio.load(data);
      const lyricsDiv = $(".lyricBody");
      if (!lyricsDiv.length) return null;
+     lyricsDiv.find("rt").remove();
+
 
      lyricsDiv.find("br").replaceWith("\n");
      const lyrics = lyricsDiv.text().trim();
@@ -704,7 +706,6 @@ async function getLyricsLN(artist, song) {
     }
 
     if (!lyricsDiv.length) throw new Error("No lyrics found");
-
     // Convert <br> to newline
     lyricsDiv.find('br').replaceWith('\n');
 
