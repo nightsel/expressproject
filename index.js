@@ -849,23 +849,34 @@ app.get("/luna", async (req, res) => {
   try {
     const { data, error } = await supabase
       .storage
-      .from('defaulttrack') // your bucket
+      .from('defaulttrack')
       .download('lunastar.mp3');
 
     if (error) throw error;
 
-    // Convert data to buffer
+    // Convert Supabase response to a readable stream
     const arrayBuffer = await data.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Content-Length', buffer.length);
-    res.send(buffer);
+    res.setHeader('Accept-Ranges', 'bytes'); // important for seeking
+
+    // Stream the buffer to the response
+    const { Readable } = require('stream');
+    const stream = Readable.from(buffer);
+    stream.pipe(res);
+
+    stream.on('error', (err) => {
+      console.error('Stream error:', err);
+      res.sendStatus(500);
+    });
   } catch (err) {
     console.error(err);
     res.status(500).send('Error fetching audio');
   }
 });
+
 
 /*app.get("/temp-audio", (req, res) => {
   const filePath = path.join(process.cwd(), "temp_audio.mp3");
