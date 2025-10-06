@@ -846,25 +846,22 @@ app.get("/temp-audio/:id", (req, res) => {
 });
 
 app.get("/luna", (req, res) => {
-  const { id } = req.params;
-  const tempFolder = path.join(process.cwd(), "defaulttrack");
-  const filePath = path.join(tempFolder, `lunastar.mp3`);
+  const { data, error } = await supabase
+    .storage
+    .from("defaulttrack")
+    .createSignedUrl("lunastar.mp3", 60 * 60); // 1 hour
 
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: "File not found" });
+  if (error || !data?.signedUrl) return res.status(500).json({ error: "Failed to get file" });
+
+  res.json({ url: data.signedUrl }); // frontend can fetch this URL
+
+  res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Length", buffer.length);
+    res.end(buffer);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch file" });
   }
-
-  res.sendFile(filePath, (err) => {
-    if (err) {
-      if (err.code === "ECONNABORTED") {
-        console.warn("Client aborted connection (normal for small files)");
-      } else {
-        console.error("Error sending file:", err);
-      }
-    } else {
-      console.log("File sent successfully");
-    }
-  });
 });
 
 // ----- Serve Waveform JSON -----
