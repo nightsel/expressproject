@@ -847,41 +847,23 @@ app.get("/temp-audio/:id", (req, res) => {
 
 app.get("/luna", async (req, res) => {
   try {
-    const { data: file, error } = await supabase
+    const { data, error } = await supabase
       .storage
-      .from("audio")
-      .download("lunastar.mp3");
+      .from('defaulttrack') // your bucket
+      .download('lunastar.mp3');
 
     if (error) throw error;
 
-    const buffer = Buffer.from(await file.arrayBuffer());
+    // Convert data to buffer
+    const arrayBuffer = await data.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
-    res.setHeader("Content-Type", "audio/mpeg");
-    res.setHeader("Content-Length", buffer.length);
-    res.end(buffer);
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Length', buffer.length);
+    res.send(buffer);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to fetch file" });
-  }
-});
-
-// ----- Serve Waveform JSON -----
-app.get("/waveform/:id", (req, res) => {
-  const { id } = req.params;
-  const tempFolder = path.join(process.cwd(), "temp_audio");
-  const filePath = path.join(tempFolder, `waveform_${id}.json`);
-
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: "Waveform file not found" });
-  }
-
-  try {
-    const jsonData = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    res.json(jsonData); // send as proper JSON
-    console.log("Waveform sent successfully");
-  } catch (err) {
-    console.error("Error reading waveform file:", err);
-    res.status(500).json({ error: "Failed to read waveform JSON" });
+    res.status(500).send('Error fetching audio');
   }
 });
 
