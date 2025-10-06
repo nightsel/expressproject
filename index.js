@@ -765,7 +765,19 @@ export async function getLyrics(artist, song) {
   return lines || [];
 }
 
+/*app.get('/getLyrics', async (req, res) => {
+  try {
+    // Decode special characters
+    const artist = decodeURIComponent(req.query.artist);
+    const song = decodeURIComponent(req.query.song);
 
+    const lines = await getLyrics(artist, song); // calls your local getLyrics function
+    res.json(lines); // return as array
+  } catch (err) {
+    console.error(err);
+    res.status(500).json([]);
+  }
+});*/
 
 
 //getLyrics("coldplay", "yellow").then(console.log)
