@@ -849,31 +849,47 @@ app.get("/luna", async (req, res) => {
   try {
     const { data, error } = await supabase
       .storage
-      .from('defaulttrack')
-      .download('lunastar.mp3');
+      .from("defaulttrack")
+      .download("lunastar.mp3");
 
-    if (error) throw error;
+      if (error) {
+    console.error("Supabase download error:", error);
+    throw error; // triggers 500
+  }
 
-    // Convert Supabase response to a readable stream
     const arrayBuffer = await data.arrayBuffer();
+
     const buffer = Buffer.from(arrayBuffer);
 
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Content-Length', buffer.length);
-    res.setHeader('Accept-Ranges', 'bytes'); // important for seeking
+    const range = req.headers.range;
+    const total = buffer.length;
 
-    // Stream the buffer to the response
-    const { Readable } = require('stream');
-    const stream = Readable.from(buffer);
-    stream.pipe(res);
 
-    stream.on('error', (err) => {
-      console.error('Stream error:', err);
-      res.sendStatus(500);
-    });
+    if (range) {
+      const match = range.match(/bytes=(\d+)-(\d*)/);
+      if (!match) return res.status(400).send("Malformed range header");
+
+      const start = parseInt(match[1], 10);
+      const end = match[2] ? parseInt(match[2], 10) : total - 1;
+
+
+      res.status(206); // Partial Content
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Content-Length", (end - start) + 1);
+      res.setHeader("Content-Type", "audio/mpeg");
+
+      res.end(buffer.slice(start, end + 1));
+    } else {
+      res.setHeader("Content-Length", total);
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Content-Type", "audio/mpeg");
+      res.end(buffer);
+    }
+
   } catch (err) {
     console.error(err);
-    res.status(500).send('Error fetching audio');
+    res.status(500).send("Error fetching audio");
   }
 });
 
