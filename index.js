@@ -1,5 +1,4 @@
-// Full-stack project with persistent votes and user feedback stored in PostgreSQL, accessible via Express API.
-//process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
 import express from "express";
 import cors from "cors";
 import Sentiment from "sentiment";
@@ -18,27 +17,6 @@ import { spawn } from "child_process";
 import ytdlp from 'yt-dlp-exec';
 import { fileURLToPath } from "url";
 import puppeteer from "puppeteer-core";
-
-/*async function downloadYouTubeToBuffer(url) {
-  return new Promise((resolve, reject) => {
-    const ytdlp = spawn("yt-dlp", ["-x", "--audio-format", "mp3", "-o", "-", url], {
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-
-    const chunks = [];
-    let errorData = "";
-
-    ytdlp.stdout.on("data", chunk => chunks.push(chunk));
-    ytdlp.stderr.on("data", chunk => errorData += chunk.toString());
-
-    ytdlp.on("error", err => reject(err));
-
-    ytdlp.on("close", code => {
-      if (code !== 0) return reject(new Error(`yt-dlp failed:\n${errorData}`));
-      resolve(Buffer.concat(chunks)); // returns the full MP3 as a Buffer
-    });
-  });
-}*/
 
 dotenv.config();
 
@@ -564,6 +542,76 @@ async function getLyricsAZ(artist, song) {
 
 const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN;
 
+/**
+ * Fetch the first song URL from Utaten search.
+ */
+async function searchUtaten(artist, title) {
+  const query = encodeURIComponent(`${artist} ${title}`);
+  const url = `https://utaten.com/search?sort=popular_sort_asc&artist_name=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}&beginning=&body=&lyricist=&composer=&sub_title=&tag=&show_artists=1`;
+  try {
+    const { data } = await axios.get(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+      },
+    });
+
+    const $ = cheerio.load(data);
+
+    // Collect all links in search results
+    const results = [];
+    $(".searchResult a").each((i, el) => {
+      const text = $(el).text().trim();
+      const href = $(el).attr("href");
+      if (href) results.push({ text, href });
+    });
+
+    // Utaten search result links
+    const firstLink = results.find(r => r.href.includes("/lyric/"))?.href;
+
+    if (!firstLink) return null;
+
+    // Full URL
+    return firstLink.startsWith("http") ? firstLink : `https://utaten.com${firstLink}`;
+  } catch (err) {
+    console.error("Utaten search failed:", err.message);
+    return null;
+  }
+}
+
+/**
+ * Fetch lyrics from a specific Utaten lyrics page
+ */
+ async function fetchUtatenLyrics(url) {
+   try {
+     const { data } = await axios.get(url, {
+       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+     });
+
+     const $ = cheerio.load(data);
+     const lyricsDiv = $(".lyricBody");
+     if (!lyricsDiv.length) return null;
+
+     lyricsDiv.find("br").replaceWith("\n");
+     const lyrics = lyricsDiv.text().trim();
+
+     return lyrics ? lyrics.split("\n").map(l => l.trim()).filter(Boolean) : null;
+   } catch (err) {
+     console.error("Utaten fetch failed:", err.message);
+     return null;
+   }
+ }
+
+/**
+ * Full helper: fetch lyrics from Utaten by artist/title
+ */
+export async function getLyricsUtaten(artist, song) {
+  const lyricsUrl = await searchUtaten(artist, song);
+  if (!lyricsUrl) return null;
+
+  const lines = await fetchUtatenLyrics(lyricsUrl);
+  return lines;
+}
+
 export async function getLyricsLT(artist, song) {
   const formattedSong = song.replace(/\s+/g, "-");
   const formattedArtist = artist.replace(/\s+/g, "-");
@@ -680,6 +728,7 @@ async function getLyricsLN(artist, song) {
 export async function getLyrics(artist, song) {
   let lines = await getLyricsLN(artist, song);
   if (!lines) lines = await getLyricsLT(artist, song);
+  if (!lines) lines = await getLyricsUtaten(artist, song);
   return lines || [];
 }
 
