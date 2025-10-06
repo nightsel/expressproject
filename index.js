@@ -581,28 +581,60 @@ async function searchUtaten(artist, title) {
 /**
  * Fetch lyrics from a specific Utaten lyrics page
  */
- async function fetchUtatenLyrics(url) {
-   try {
-     const { data } = await axios.get(url, {
-       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
-     });
+ export async function fetchUtatenLyrics(url) {
+  try {
+    const { data } = await axios.get(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+    });
 
-     const $ = cheerio.load(data);
-     const lyricsDiv = $(".lyricBody");
-     if (!lyricsDiv.length) return null;
-     lyricsDiv.find("rt").remove();
+    const $ = cheerio.load(data);
 
+    const lyricLines = $(".hiragana");
+    const lines = [];
 
-     lyricsDiv.find("br").replaceWith("\n");
-     const lyrics = lyricsDiv.text().trim();
+    lyricLines.each((i, line) => {
+      const $line = $(line);
 
-     return lyrics ? lyrics.split("\n").map(l => l.trim()).filter(Boolean) : null;
-   } catch (err) {
-     console.error("Utaten fetch failed:", err.message);
-     return null;
-   }
- }
+      function extractText(node) {
+        const $node = $(node);
 
+        if (node.type === "text") {
+          return node.data.trim();
+        }
+
+        if ($node.is("br") || $node.is("b")) {
+          return "\n"; // treat <b> like a line break too
+        }
+
+        if ($node.hasClass("ruby")) {
+          // Only get the rb part, ignore rt
+          const rbText = $node.find(".rb").map((_, el) => $(el).text().trim()).get().join("");
+          return rbText;
+        }
+
+        if (node.children && node.children.length > 0) {
+          return node.children.map(extractText).join("");
+        }
+
+        return "";
+      }
+
+      // join, collapse multiple \n into one, then split into lines
+      const fullText = line.children.map(extractText).join("");
+      const splitLines = fullText
+        .split(/\n+/)          // split by any consecutive line breaks
+        .map(l => l.trim())    // remove leading/trailing spaces
+        .filter(Boolean);      // remove empty lines
+
+      lines.push(...splitLines);
+    });
+
+    return lines;
+  } catch (err) {
+    console.error("Utaten fetch failed:", err.message);
+    return null;
+  }
+}
 /**
  * Full helper: fetch lyrics from Utaten by artist/title
  */
@@ -658,9 +690,9 @@ export async function getLyricsLT(artist, song) {
     });
 
     if (lines.length) return lines;
-    console.warn("Axios succeeded but no lyrics found, trying Browserless fallback...");
+    console.warn("Axios succeeded but no lyrics found.");
   } catch (err) {
-    console.warn("Axios fallback failed:", err.message, "Trying Browserless fallback...");
+    console.warn("Axios fallback failed:", err.message, );
   }
 
   // 3️⃣ Final fallback: Browserless (works even if cloud IP is blocked)
@@ -732,6 +764,13 @@ export async function getLyrics(artist, song) {
   if (!lines) lines = await getLyricsUtaten(artist, song);
   return lines || [];
 }
+
+(async () => {
+  const lyrs = await getLyrics("*luna", "st/a#r");
+  console.log(lyrs);
+})();
+
+
 
 //getLyrics("coldplay", "yellow").then(console.log)
 
