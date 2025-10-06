@@ -442,7 +442,7 @@ async function getLyricsGenius(artist, song) {
     });
 
     const page = await browser.newPage();
-    await page.goto("https://lyricstranslate.com/en/Coldplay-Yellow-lyrics.html", { waitUntil: "domcontentloaded" });
+    await page.goto("https://vocaloidlyrics.miraheze.org/wiki/ST/AR", { waitUntil: "domcontentloaded" });
 
     const title = await page.title();
     console.log("Page title:", title);
@@ -827,6 +827,28 @@ app.get("/temp-audio/:id", (req, res) => {
   const { id } = req.params;
   const tempFolder = path.join(process.cwd(), "temp_audio");
   const filePath = path.join(tempFolder, `temp_audio_${id}.mp3`);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: "File not found" });
+  }
+
+  res.sendFile(filePath, (err) => {
+    if (err) {
+      if (err.code === "ECONNABORTED") {
+        console.warn("Client aborted connection (normal for small files)");
+      } else {
+        console.error("Error sending file:", err);
+      }
+    } else {
+      console.log("File sent successfully");
+    }
+  });
+});
+
+app.get("/luna", (req, res) => {
+  const { id } = req.params;
+  const tempFolder = path.join(process.cwd(), "defaulttrack");
+  const filePath = path.join(tempFolder, `lunastar.mp3`);
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: "File not found" });
