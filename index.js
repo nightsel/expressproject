@@ -765,10 +765,6 @@ export async function getLyrics(artist, song) {
   return lines || [];
 }
 
-(async () => {
-  const lyrs = await getLyrics("*luna", "st/a#r");
-  console.log(lyrs);
-})();
 
 
 
