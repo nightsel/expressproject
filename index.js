@@ -845,17 +845,18 @@ app.get("/temp-audio/:id", (req, res) => {
   });
 });
 
-app.get("/luna", (req, res) => {
-  const { data, error } = await supabase
-    .storage
-    .from("defaulttrack")
-    .createSignedUrl("lunastar.mp3", 60 * 60); // 1 hour
+app.get("/luna", async (req, res) => {
+  try {
+    const { data: file, error } = await supabase
+      .storage
+      .from("audio")
+      .download("lunastar.mp3");
 
-  if (error || !data?.signedUrl) return res.status(500).json({ error: "Failed to get file" });
+    if (error) throw error;
 
-  res.json({ url: data.signedUrl }); // frontend can fetch this URL
+    const buffer = Buffer.from(await file.arrayBuffer());
 
-  res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Type", "audio/mpeg");
     res.setHeader("Content-Length", buffer.length);
     res.end(buffer);
   } catch (err) {
