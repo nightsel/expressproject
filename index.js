@@ -547,7 +547,9 @@ const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN;
  */
 async function searchUtaten(artist, title) {
   const query = encodeURIComponent(`${artist} ${title}`);
+
   const url = `https://utaten.com/search?sort=popular_sort_asc&artist_name=${encodeURIComponent(artist)}&title=${encodeURIComponent(title)}&beginning=&body=&lyricist=&composer=&sub_title=&tag=&show_artists=1`;
+
   try {
     const { data } = await axios.get(url, {
       headers: {
@@ -635,14 +637,73 @@ async function searchUtaten(artist, title) {
     return null;
   }
 }
+
+export async function fetchUtatenRomaji(url) {
+  try {
+    const { data } = await axios.get(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+    });
+
+    const $ = cheerio.load(data);
+
+    // Change selector from .hiragana to .romaji
+    const lyricLines = $(".romaji");
+    const lines = [];
+
+    lyricLines.each((i, line) => {
+      const $line = $(line);
+
+      function extractText(node) {
+        const $node = $(node);
+
+        if (node.type === "text") {
+          return node.data.trim();
+        }
+
+        if ($node.is("br") || $node.is("b")) {
+          return "\n"; // treat <b> like a line break too
+        }
+
+        if ($node.hasClass("ruby")) {
+          // Now get the rt part for romaji instead of rb
+          const rtText = $node.find(".rt").map((_, el) => $(el).text().trim()).get().join("");
+          return rtText;
+        }
+
+        if (node.children && node.children.length > 0) {
+          return node.children.map(extractText).join("");
+        }
+
+        return "";
+      }
+
+      const fullText = line.children.map(extractText).join("");
+      const splitLines = fullText
+        .split(/\n+/)
+        .map(l => l.trim())
+        .filter(Boolean);
+
+      lines.push(...splitLines);
+    });
+
+    return lines;
+  } catch (err) {
+    console.error("Utaten romaji fetch failed:", err.message);
+    return null;
+  }
+}
+
 /**
  * Full helper: fetch lyrics from Utaten by artist/title
  */
-export async function getLyricsUtaten(artist, song) {
+export async function getLyricsUtaten(artist, song, mode) {
   const lyricsUrl = await searchUtaten(artist, song);
   if (!lyricsUrl) return null;
-
-  const lines = await fetchUtatenLyrics(lyricsUrl);
+  let lines;
+  if (mode == "romaji") lines = await fetchUtatenRomaji(lyricsUrl);
+  else {
+    lines = await fetchUtatenLyrics(lyricsUrl);
+  }
   return lines;
 }
 
@@ -758,12 +819,18 @@ async function getLyricsLN(artist, song) {
   }
 }
 
-export async function getLyrics(artist, song) {
-  let lines = await getLyricsLN(artist, song);
+export async function getLyrics(artist, song, mode) {
+  let lines;
+  if (mode == "romaji") {
+    lines = await getLyricsUtaten(artist, song, "romaji");
+  }
+  if (!lines) lines = await getLyricsLN(artist, song);
   if (!lines) lines = await getLyricsLT(artist, song);
-  if (!lines) lines = await getLyricsUtaten(artist, song);
+  if (!lines) lines = await getLyricsUtaten(artist, song, "hiragana");
   return lines || [];
 }
+
+
 
 /*app.get('/getLyrics', async (req, res) => {
   try {
