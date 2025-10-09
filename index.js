@@ -850,9 +850,9 @@ export async function getLyrics(artist, song, mode) {
 //getLyrics("coldplay", "yellow").then(console.log)
 
 app.get("/lyrics", async (req, res) => {
-  const { artist, song } = req.query;
+  const { artist, song, mode } = req.query;
   if (!artist || !song) return res.status(400).json({ error: "artist and song required" });
-  const lines = await getLyrics(artist, song);
+  const lines = await getLyrics(artist, song, mode);
   res.json({ lines });
 });
 
