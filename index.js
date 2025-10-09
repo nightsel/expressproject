@@ -542,6 +542,30 @@ async function getLyricsAZ(artist, song) {
 
 const BROWSERLESS_TOKEN = process.env.BROWSERLESS_TOKEN;
 
+/*app.get("/translate", async (req, res) => {
+  const { text, target_lang } = req.query;
+  const result = await translateText(text, target_lang || "EN");
+  res.json({ translation: result });
+});*/
+
+
+export async function translateText(text, targetLang = "EN") {
+  try {
+    const response = await axios.post(
+      "https://api-free.deepl.com/v2/translate",
+      new URLSearchParams({
+        auth_key: process.env.DEEPL_API_KEY,
+        text,
+        target_lang: targetLang,
+      })
+    );
+    return response.data.translations[0].text;
+  } catch (err) {
+    console.error("DeepL translation failed:", err.message);
+    return null;
+  }
+}
+
 /**
  * Fetch the first song URL from Utaten search.
  */
@@ -694,7 +718,7 @@ export async function fetchUtatenRomaji(url) {
 /**
  * Full helper: fetch lyrics from Utaten by artist/title
  */
-export async function getLyricsUtaten(artist, song, mode) {
+export async function getLyricsUtaten(artist, song, mode="normal") {
   const lyricsUrl = await searchUtaten(artist, song);
   if (!lyricsUrl) return null;
   let lines;
@@ -824,7 +848,13 @@ export async function getLyrics(artist, song, mode) {
   }
   if (!lines) lines = await getLyricsLN(artist, song);
   if (!lines) lines = await getLyricsLT(artist, song);
-  if (!lines) lines = await getLyricsUtaten(artist, song, "hiragana");
+  if (!lines) lines = await getLyricsUtaten(artist, song);
+  if (mode === "translate") {
+    const textToTranslate = lines.filter(Boolean).join("\n"); // skip nulls
+    const translated = await translateText(textToTranslate);
+    lines = translated ? translated.split("\n") : lines;
+  }
+  console.log(lines);
   return lines || [];
 }
 
@@ -853,6 +883,8 @@ app.get("/lyrics", async (req, res) => {
   const lines = await getLyrics(artist, song, mode);
   res.json({ lines });
 });
+
+getLyrics("*Luna","ST/A#R", "translate")
 
 const sentiment = new Sentiment();
 
