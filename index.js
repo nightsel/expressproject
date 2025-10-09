@@ -645,14 +645,10 @@ export async function fetchUtatenRomaji(url) {
     });
 
     const $ = cheerio.load(data);
-
-    // Change selector from .hiragana to .romaji
     const lyricLines = $(".romaji");
     const lines = [];
 
     lyricLines.each((i, line) => {
-      const $line = $(line);
-
       function extractText(node) {
         const $node = $(node);
 
@@ -661,23 +657,25 @@ export async function fetchUtatenRomaji(url) {
         }
 
         if ($node.is("br") || $node.is("b")) {
-          return "\n"; // treat <b> like a line break too
+          return "\n";
         }
 
         if ($node.hasClass("ruby")) {
-          // Now get the rt part for romaji instead of rb
+          // join all <rt> inside this ruby with no extra space
           const rtText = $node.find(".rt").map((_, el) => $(el).text().trim()).get().join("");
           return rtText;
         }
 
         if (node.children && node.children.length > 0) {
-          return node.children.map(extractText).join("");
+          // recursively extract children and join with space
+          return node.children.map(extractText).join(" ");
         }
 
         return "";
       }
 
-      const fullText = line.children.map(extractText).join("");
+      // <-- add space between top-level children here
+      const fullText = line.children.map(extractText).filter(Boolean).join(" ");
       const splitLines = fullText
         .split(/\n+/)
         .map(l => l.trim())
