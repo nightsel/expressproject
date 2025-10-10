@@ -854,7 +854,6 @@ export async function getLyrics(artist, song, mode) {
     const translated = await translateText(textToTranslate);
     lines = translated ? translated.split("\n") : lines;
   }
-  console.log(lines);
   return lines || [];
 }
 
