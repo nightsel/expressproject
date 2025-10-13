@@ -841,14 +841,136 @@ async function getLyricsLN(artist, song) {
   }
 }
 
-export async function getLyrics(artist, song, mode) {
+/**
+ * Search Letras.com for a song and return the first lyrics page URL.
+ * @param {string} song - Song name (required)
+ * @param {string} [artist] - Optional artist name
+ * @returns {Promise<string|null>} - Full URL of first lyrics page or null if not found
+ */
+ // this function needs to use browserless because Letras uses google search to fill
+ // html with javascript, which cannot be loaded without browserless.
+ const TOKEN = process.env.BROWSERLESS_TOKEN;
+
+ let browser; // global browser instance
+
+ async function getBrowser() {
+   if (!browser) {
+     console.log("Starting new browser instance...");
+     browser = await puppeteer.connect({
+       browserWSEndpoint: `wss://production-sfo.browserless.io?token=${TOKEN}`,
+     });
+   }
+   return browser;
+ }
+
+
+ /**
+  * Fetches the first lyrics link from Letras for a given artist and song.
+  */
+ export async function searchLetras(artist, song) {
+   try {
+     const browser = await getBrowser();
+     const page = await browser.newPage();
+
+     const query = encodeURIComponent(`${artist} ${song}`);
+     const searchUrl = `https://www.letras.com/?q=${query}`;
+     await page.goto(searchUrl, { waitUntil: "networkidle2" });
+
+     // Wait for the search results container
+     await page.waitForSelector(".gsc-webResult.gsc-result", { timeout: 10000 });
+
+     // Grab first lyrics link
+     const firstLink = await page.$eval(
+       ".gsc-webResult.gsc-result .gs-title a",
+       (el) => el.href
+     );
+
+     await page.close();
+
+     if (!firstLink) return null;
+     return firstLink.startsWith("http") ? firstLink : `https://www.letras.com${firstLink}`;
+   } catch (err) {
+     console.error("Letras search failed:", err.message);
+     return null;
+   }
+ }
+
+ /**
+  * Close the browser instance (optional, e.g., on app shutdown)
+  */
+ export async function closeBrowser() {
+   if (browser) {
+     await browser.close();
+     browser = null;
+     console.log("Browser closed");
+   }
+ }
+
+ /**
+ * Fetch lyrics from a Letras lyrics page
+ */
+ export async function fetchLetrasLyrics(url) {
+   try {
+
+     const { data } = await axios.get(url, {
+       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+     });
+
+     const $ = cheerio.load(data);
+     const lyricsDiv = $(".lyric-original");
+     if (!lyricsDiv.length) return null;
+
+     const lines = [];
+
+     function extractText(node) {
+       if (node.type === "text") {
+         return node.data;
+       }
+       if (node.name === "br") {
+         return "\n";
+       }
+       if (node.children && node.children.length) {
+         return node.children.map(extractText).join("");
+       }
+       return "";
+     }
+
+     lyricsDiv.each((i, el) => {
+       const text = extractText(el);
+       lines.push(...text.split(/\n+/).map(l => l.trim()).filter(Boolean));
+     });
+
+     return lines;
+   } catch (err) {
+     console.error("Letras fetch failed:", err.message);
+     return null;
+   }
+ }
+
+export async function getLyricsLetras(artist, song) {
+  let url = await searchLetras(artist, song);
+  if (!url) return null;
+  url = url.replace(/\/traduc?a?o?n?\.html$/, "");
+  url = url.replace(/\/traduccion.html$/, "");
+  console.log(url);
+  const lyrs = await fetchLetrasLyrics(url);
+  await  closeBrowser();
+  return lyrs;
+}
+
+
+export async function getLyrics(artist, song, site = "LN", mode = "normal") {
   let lines;
   if (mode == "romaji") {
     lines = await getLyricsUtaten(artist, song, "romaji");
   }
+  if (site == "Letras") lines = await getLyricsLetras(artist, song);
+  if (site == "LT") lines = await getLyricsLT(artist, song);
+  if (site == "Utaten") lines = await getLyricsUtaten(artist, song);
   if (!lines) lines = await getLyricsLN(artist, song);
-  if (!lines) lines = await getLyricsLT(artist, song);
-  if (!lines) lines = await getLyricsUtaten(artist, song);
+  if (!lines && (site != "LT")) lines = await getLyricsLT(artist, song);
+  if (!lines && (site != "Utaten")) lines = await getLyricsUtaten(artist, song);
+  if (!lines && (site != "Letras")) lines = await getLyricsLetras(artist, song);
   if (mode === "translate") {
     const textToTranslate = lines.filter(Boolean).join("\n"); // skip nulls
     const translated = await translateText(textToTranslate);
@@ -883,7 +1005,7 @@ app.get("/lyrics", async (req, res) => {
   res.json({ lines });
 });
 
-getLyrics("*Luna","ST/A#R", "translate")
+//getLyrics("*Luna","ST/A#R", "translate")
 
 const sentiment = new Sentiment();
 
