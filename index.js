@@ -926,12 +926,21 @@ async function getLyricsLN(artist, song) {
        if (node.type === "text") {
          return node.data;
        }
+
        if (node.name === "br") {
          return "\n";
        }
+
+       if (node.name === "p") {
+         // Extract children, then add a line break after the paragraph
+         const inner = node.children.map(extractText).join("");
+         return inner + "\n";
+       }
+
        if (node.children && node.children.length) {
          return node.children.map(extractText).join("");
        }
+
        return "";
      }
 
@@ -976,6 +985,7 @@ export async function getLyrics(artist, song, site = "LN", mode = "normal") {
     const translated = await translateText(textToTranslate);
     lines = translated ? translated.split("\n") : lines;
   }
+  console.log(lines);
   return lines || [];
 }
 
