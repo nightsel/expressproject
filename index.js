@@ -1054,9 +1054,9 @@ alignLyrics("wastequa.wav", "waste2.txt", "test.json");
 //getLyrics("coldplay", "yellow").then(console.log)
 
 app.get("/lyrics", async (req, res) => {
-  const { artist, song, mode } = req.query;
+  const { artist, song, mode, site } = req.query;
   if (!artist || !song) return res.status(400).json({ error: "artist and song required" });
-  const lines = await getLyrics(artist, song, mode);
+  const lines = await getLyrics(artist, song, mode, site);
   res.json({ lines });
 });
 
