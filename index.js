@@ -1013,6 +1013,7 @@ async function saveLyricsToFile(artist, song, mode = "normal", site = "LN") {
   console.log(`Lyrics saved to ${filePath}`);
 }
 
+/*
 const execAsync = util.promisify(exec);
 
 async function alignLyrics(audioFile, lyricsFile, outputFile = "test.json") {
@@ -1030,6 +1031,7 @@ async function alignLyrics(audioFile, lyricsFile, outputFile = "test.json") {
 
 // Example usage:
 alignLyrics("wastequa.wav", "waste2.txt", "test.json");
+*/
 
 
 
