@@ -860,6 +860,7 @@ async function getLyricsLN(artist, song) {
   */
  export async function searchLetras(artist, song) {
    try {
+     console.log(TOKEN);
      browser = await puppeteer.connect({
        browserWSEndpoint: `wss://production-sfo.browserless.io?token=${TOKEN}`,
      });
