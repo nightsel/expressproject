@@ -889,6 +889,7 @@ async function getLyricsLN(artist, song) {
      await page.close();
 
      if (!firstLink) return null;
+     console.log("found Letras")
      return firstLink.startsWith("http") ? firstLink : `https://www.letras.com${firstLink}`;
    } catch (err) {
      console.error("Letras search failed:", err.message);
@@ -949,7 +950,7 @@ async function getLyricsLN(artist, song) {
        const text = extractText(el);
        lines.push(...text.split(/\n+/).map(l => l.trim()).filter(Boolean));
      });
-
+     consolelog("Letras lyrics successfully returned")
      return lines;
    } catch (err) {
      console.error("Letras fetch failed:", err.message);
