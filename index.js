@@ -854,23 +854,16 @@ async function getLyricsLN(artist, song) {
 
  let browser; // global browser instance
 
- async function getBrowser() {
-   if (!browser) {
-     console.log("Starting new browser instance...");
-     browser = await puppeteer.connect({
-       browserWSEndpoint: `wss://production-sfo.browserless.io?token=${TOKEN}`,
-     });
-   }
-   return browser;
- }
-
 
  /**
   * Fetches the first lyrics link from Letras for a given artist and song.
   */
  export async function searchLetras(artist, song) {
    try {
-     const browser = await getBrowser();
+     browser = await puppeteer.connect({
+       browserWSEndpoint: `wss://production-sfo.browserless.io?token=${TOKEN}`,
+     });
+
      const page = await browser.newPage();
 
      const query = encodeURIComponent(`${artist} ${song}`);
@@ -950,7 +943,7 @@ async function getLyricsLN(artist, song) {
        const text = extractText(el);
        lines.push(...text.split(/\n+/).map(l => l.trim()).filter(Boolean));
      });
-     consolelog("Letras lyrics successfully returned")
+     console.log("Letras lyrics successfully returned")
      return lines;
    } catch (err) {
      console.error("Letras fetch failed:", err.message);
@@ -987,8 +980,10 @@ export async function getLyrics(artist, song, mode = "normal", site = "LN") {
     const translated = await translateText(textToTranslate);
     lines = translated ? translated.split("\n") : lines;
   }
+  console.log(lines);
   return lines || [];
 }
+
 
 async function saveLyricsToFile(artist, song, mode = "normal", site = "LN") {
   const lines = await getLyrics(artist, song, mode, site);
