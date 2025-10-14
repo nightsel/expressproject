@@ -12,6 +12,7 @@ import { createClient } from '@supabase/supabase-js';
 import dotenv from "dotenv";
 import { execFile } from 'child_process';
 import os from "os";
+import util from "util";
 
 import { spawn } from "child_process";
 import ytdlp from 'yt-dlp-exec';
@@ -968,7 +969,7 @@ export async function getLyricsLetras(artist, song) {
 }
 
 
-export async function getLyrics(artist, song, site = "LN", mode = "normal") {
+export async function getLyrics(artist, song, mode = "normal", site = "LN") {
   let lines;
   if (mode == "romaji") {
     lines = await getLyricsUtaten(artist, song, "romaji");
@@ -985,9 +986,51 @@ export async function getLyrics(artist, song, site = "LN", mode = "normal") {
     const translated = await translateText(textToTranslate);
     lines = translated ? translated.split("\n") : lines;
   }
-  console.log(lines);
   return lines || [];
 }
+
+async function saveLyricsToFile(artist, song, mode = "normal", site = "LN") {
+  const lines = await getLyrics(artist, song, mode, site);
+
+  if (!lines || lines.length === 0) {
+    console.log("No lyrics found.");
+    return;
+  }
+
+  // Join lines into a single string
+  const text = lines.join("\n");
+
+  // Optional: create a safe filename
+  const fileName = `${artist} - ${song}.txt`.replace(/[\/\\?%*:|"<>]/g, "-");
+  const filePath = path.join("./lyrics", fileName);
+
+  // Make sure the folder exists
+  fs.mkdirSync("./lyrics", { recursive: true });
+
+  // Write the file
+  fs.writeFileSync(filePath, text, "utf-8");
+
+  console.log(`Lyrics saved to ${filePath}`);
+}
+
+const execAsync = util.promisify(exec);
+
+async function alignLyrics(audioFile, lyricsFile, outputFile = "test.json") {
+  const cmd = `python -m aeneas.tools.execute_task "${audioFile}" "${lyricsFile}" "task_language=en|is_text_type=plain|os_task_file_format=json" "${outputFile}"`;
+
+  try {
+    const { stdout, stderr } = await execAsync(cmd);
+    if (stderr) console.warn("Aeneas warning:", stderr);
+    console.log("Aeneas output:", stdout);
+    console.log(`Alignment saved to ${outputFile}`);
+  } catch (err) {
+    console.error("Aeneas failed:", err.message);
+  }
+}
+
+// Example usage:
+alignLyrics("wastequa.wav", "waste2.txt", "test.json");
+
 
 
 
