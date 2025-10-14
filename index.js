@@ -233,7 +233,7 @@ const port = process.env.PORT || 10000;
 
 async function downloadYouTubeToBuffer(url) {
   return new Promise((resolve, reject) => {
-    const ytdlp = spawn("yt-dlp", ["-x", "--audio-format", "mp3", "-o", "-", url], {
+    const ytdlp = spawn("yt-dlp", ["-x", "--audio-format", "wav", "-o", "-", url], {
   stdio: ["ignore", "pipe", "pipe"]
 });
 
@@ -1081,14 +1081,14 @@ app.get("/download-audio", async (req, res) => {
   if (!url) return res.status(400).json({ error: "Missing audio URL" });
 
   const id = uuidv4();
-  const tempPath = path.join(os.tmpdir(), `temp_audio_${id}.mp3`);
+  const tempPath = path.join(os.tmpdir(), `temp_audio_${id}.wav`);
   const bucketName = "audio";
 
   try {
     // --- Download audio from YouTube/SoundCloud using yt-dlp ---
     await ytdlp(url, {
       extractAudio: true,
-      audioFormat: "mp3",
+      audioFormat: "wav",
       output: tempPath,
       quiet: true,
       noWarnings: true,
@@ -1103,7 +1103,7 @@ app.get("/download-audio", async (req, res) => {
     const { error: uploadError } = await supabase
       .storage
       .from(bucketName)
-      .upload(`temp_audio_${id}.mp3`, buffer, {
+      .upload(`temp_audio_${id}.wav`, buffer, {
         cacheControl: "3600",
         upsert: true,
         contentType: "audio/mpeg",
@@ -1115,7 +1115,7 @@ app.get("/download-audio", async (req, res) => {
     const { data: signedData, error: signedError } = await supabase
       .storage
       .from(bucketName)
-      .createSignedUrl(`temp_audio_${id}.mp3`, 60 * 60);
+      .createSignedUrl(`temp_audio_${id}.wav`, 60 * 60);
 
     if (signedError) throw signedError;
     if (!signedData?.signedUrl) throw new Error("Signed URL not returned");
@@ -1135,7 +1135,7 @@ app.get("/download-audio", async (req, res) => {
 
 // for personal debugging
 app.get("/my-audio", (req, res) => {
-  const filePath = path.join(process.cwd(), "public/proxy-audio.mp3");
+  const filePath = path.join(process.cwd(), "public/proxy-audio.wav");
   res.sendFile(filePath);
 });
 
@@ -1193,7 +1193,7 @@ app.get("/proxy-audio", async (req, res) => {
 app.get("/temp-audio/:id", (req, res) => {
   const { id } = req.params;
   const tempFolder = path.join(process.cwd(), "temp_audio");
-  const filePath = path.join(tempFolder, `temp_audio_${id}.mp3`);
+  const filePath = path.join(tempFolder, `temp_audio_${id}.wav`);
 
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: "File not found" });
