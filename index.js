@@ -1185,6 +1185,56 @@ app.get("/proxy-audio", async (req, res) => {
   }
 });
 
+app.post("/align-song", async (req, res) => {
+  try {
+    const { lyrics_url, audio_url } = req.body;
+
+    if (!lyrics_url || !audio_url) {
+      return res.status(400).json({ error: "Missing lyrics_url or audio_url" });
+    }
+
+    console.log("🎧 Aligning song with Aeneas...");
+    console.log("Lyrics URL:", lyrics_url);
+    console.log("Audio URL:", audio_url);
+
+    // Call your Railway alignment endpoint
+    const response = await fetch("https://expressrw-production.up.railway.app/align_song_full", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lyrics_url, audio_url }),
+    });
+
+    const data = await response.json();
+
+    if (!data.sync_map?.fragments) {
+      console.warn("⚠️ Aeneas returned no fragments");
+      return res.status(500).json({ error: "No fragments returned from alignment" });
+    }
+
+    // Optional: simplify the output to make frontend use easier
+    const simplified = data.sync_map.fragments.map(frag => ({
+      start: parseFloat(frag.begin),
+      end: parseFloat(frag.end),
+      text: frag.lines.join(" "),
+    }));
+
+    res.json({
+      status: data.status,
+      fragments: simplified,
+    });
+
+  } catch (err) {
+    console.error("💥 Error in /align-song:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// === START SERVER ===
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server listening on port ${PORT}`);
+});
+
 
 
 
